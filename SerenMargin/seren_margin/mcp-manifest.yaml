@@ -1,0 +1,94 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  mcp-manifest.yaml - SerenMargin's plug-and-play tool manifest.
+# ═══════════════════════════════════════════════════════════════════════
+#
+#  Served at GET /mcp-manifest. The SerenMcpServer's remote-import
+#  loader fetches this at startup when an operator has dropped a
+#  `from: http://<margin-host>/mcp-manifest` stub in its tools/ dir.
+#
+#  PLACEHOLDERS the route handler substitutes at request time:
+#    __BASE_URL__   request's scheme+host (so the manifest tells the
+#                   MCP to call back to the SAME instance it fetched
+#                   from - works for localhost AND remote with zero
+#                   operator config)
+#    __VERSION__    SerenMargin's installed package version
+#
+#  THREE TOOLS - the minimum corkboard from the AI side:
+#    note_to_self       write a private note          (POST /notes)
+#    list_my_notes      read back active notes        (GET  /notes)
+#    mark_note_done     pull a note from the board    (POST /notes/{id}/done)
+#
+#  Deliberately NOT exposed to the AI (operator-only): pin/unpin,
+#  retract (DELETE), stats. Three is the floor of "functional corkboard"
+#  not the ceiling; add later if a real need surfaces.
+# ═══════════════════════════════════════════════════════════════════════
+
+schema_version: 1
+
+metadata:
+  version: "__VERSION__"
+  license: GPL-3.0-only
+  authors:
+    - { name: Chad Roesler, contact: chad@example.com }
+  site: github.com/ChadRoesler/SerenMargin
+
+configuration:
+  base_url: "__BASE_URL__"
+
+tools:
+  # ─── 1. WRITE ─────────────────────────────────────────────────────────
+  - name: note_to_self
+    description: |
+      Write a private note to yourself. Personal corkboard for reminders,
+      questions to ask later, things you noticed but don't want to surface
+      unprompted. You (the note-holder) decide if and when to bring it up.
+
+      NOT for shared memory about the user or the project - use Remember /
+      RememberForLater for that. NOT for things the user should see
+      directly - say those in chat. Sparing use.
+    invoke:
+      kind: web
+      method: POST
+      path: /notes
+      body_template: |
+        {
+          "content": "{content}",
+          "kind": "{kind}",
+          "pinned": {pinned}
+        }
+    parameters:
+      - { name: content, type: string,  required: true,
+          description: "The note body. Keep it short and imperative." }
+      - { name: kind,    type: string,  required: false, default: observation,
+          description: "What kind of note: observation | reminder | question." }
+      - { name: pinned,  type: boolean, required: false, default: false,
+          description: "Pin this note so it's exempt from auto-aging." }
+
+  # ─── 2. READ ──────────────────────────────────────────────────────────
+  - name: list_my_notes
+    description: |
+      Read back the notes you've written to yourself. Returns active notes
+      only (ones you haven't marked done). Useful when you want to check
+      open threads before responding, or when something in the conversation
+      reminds you of a note from before.
+    invoke:
+      kind: web
+      method: GET
+      path: /notes
+    parameters: []
+
+  # ─── 3. CLOSE THE LOOP ────────────────────────────────────────────────
+  - name: mark_note_done
+    description: |
+      Pull a note from the corkboard - mark it as done. Use when a reminder
+      has been acted on, a question has been answered, or an observation no
+      longer needs surfacing. The note stays in history for audit (not
+      deleted), just no longer active. Requires the note's id from
+      list_my_notes.
+    invoke:
+      kind: web
+      method: POST
+      path: /notes/{id}/done
+    parameters:
+      - { name: id, type: string, required: true,
+          description: "The note's id, as returned by list_my_notes." }

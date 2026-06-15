@@ -1,0 +1,52 @@
+# seren-margin.yaml - SerenMargin config (the friend-to-friend version)
+#
+# Lives at ~/seren-margin/seren-margin.yaml (the installer writes it there and
+# starts the service with --config pointing right at it). Same shape and
+# location convention as SerenMemory's seren-memory.yaml - learn one service,
+# you know them all. Set SEREN_MARGIN_CONFIG to override the location, or pass
+# --config / -c on the command line (highest priority).
+#
+# Precedence (highest wins): env vars > this file > built-in defaults.
+# Everything here is OPTIONAL - missing keys just use the defaults shown below.
+# Bad values are ignored (logged to stderr, fall back to the default).
+#
+# The file is split into namespaced sections, lego-style. Each piece of the
+# Seren stack reads its own section and ignores the others:
+#   server:    <- this file's settings (what SerenMargin itself reads)
+#   tools:     <- reserved for the future plug-and-play MCP tool layer
+#                 (when the note_to_self write tool lands, ITS config lives
+#                  there, and SerenMargin still won't read that block)
+
+server:
+  # Where sqlite lives. ~ is expanded.
+  # Default: ~/.seren-margin/notes.db
+  # db_path: ~/.seren-margin/notes.db
+
+  # Bind address. Localhost-only by default because private notes shouldn't
+  # be on a network without auth in front. (SerenMemory defaults to 0.0.0.0
+  # for the cluster; Margin deliberately does NOT - these are private notes.)
+  # Widen at your own risk, on purpose.
+  # Default: 127.0.0.1
+  # host: 127.0.0.1
+
+  # Listen port.
+  # Default: 7421
+  # port: 7421
+
+  # Active notes auto-expire after this many days unless pinned. Done notes
+  # also age out after the same window from done_at, so "marked done by
+  # mistake" can be reversed if caught within the window.
+
+
+# Reserved for the future plug-and-play MCP tool layer. SerenMargin itself
+# ignores this block. The MCP server is what'll read it when the note_to_self
+# write tool lands. Schema will mirror McpConfig's open shape:
+#   tools:
+#     <tool_name>:
+#       <key>: <value>
+#
+# Example (illustrative - not active until the plug-and-play registry ships):
+# tools:
+#   note_to_self:
+#     max_content_chars: 2048
+#     allowed_kinds: ["reminder", "observation", "question"]

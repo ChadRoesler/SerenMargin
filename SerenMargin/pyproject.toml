@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seren-margin"
+dynamic = ["version"]
+description = "Private notes-to-self for an AI assistant. Standalone, opt-in, opinionated."
+license = "GPL-3.0-only"
+requires-python = ">=3.10"
+authors = [{ name = "Chad Roesler" }]
+readme = "README.md"
+keywords = ["seren", "notes", "fastapi", "llm", "private"]
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.5",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "httpx>=0.26",  # for fastapi TestClient
+]
+
+[project.scripts]
+seren-margin = "seren_margin.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["seren_margin*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# Ship the MCP manifest inside the wheel - without this, pip strips the
+# non-.py file and GET /mcp-manifest 500s on an installed copy.
+[tool.setuptools.package-data]
+seren_margin = ["mcp-manifest.yaml"]
+
+# ── setuptools-scm: version from git tags (matches SerenMemory) ─────────────
+# Tag the repo root v1.2.3; the version flows from the tag with no manual edit.
+# Kills the old frozen `version = "0.1.0"` that would publish the same string
+# forever. _version.py is gitignored - a build artifact, never committed.
+[tool.setuptools_scm]
+# .git is one level above pyproject.toml (repo root, not the SerenMargin subdir)
+root = ".."
+version_scheme = "release-branch-semver"
+version_file = "seren_margin/_version.py"
+# Strip the leading 'v' so "v1.2.3" → "1.2.3"
+tag_regex = "^v(?P<version>[0-9]+\\.[0-9]+\\.[0-9]+.*)$"
+# Used when no git tags exist (local dev, fresh clone). CI release builds
+# override with SETUPTOOLS_SCM_PRETEND_VERSION.
+fallback_version = "0.0.0.dev0"
