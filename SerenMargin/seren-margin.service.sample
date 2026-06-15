@@ -1,0 +1,55 @@
+[Unit]
+# SerenMargin - private notes-to-self for an AI assistant.
+#
+# install.sh substitutes the __PLACEHOLDERS__ below and strips this comment
+# block (everything before [Unit]) when it generates the live unit. If you're
+# installing BY HAND instead, replace the placeholders yourself:
+#   __TARGET_USER__  -> the user the service runs as (e.g. `whoami`)
+#   __VENV_DIR__     -> your venv (install.sh: ~/seren-venvs/margin)
+#   __WORKDIR__      -> working dir   (install.sh: ~/seren-margin)
+#   __CONFIG_PATH__  -> the yaml      (install.sh: ~/seren-margin/seren-margin.yaml)
+#
+# By-hand install (system unit):
+#   sudo cp seren-margin.service.sample /etc/systemd/system/seren-margin.service
+#   sudo $EDITOR /etc/systemd/system/seren-margin.service   # fill placeholders
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now seren-margin.service
+#
+# Logs:
+#   journalctl -u seren-margin.service -f
+#
+Description=SerenMargin - private notes-to-self
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__TARGET_USER__
+WorkingDirectory=__WORKDIR__
+# --config makes the service read the file the installer wrote, so the config
+# location is never ambiguous. (Same pattern as SerenMemory.)
+ExecStart=__VENV_DIR__/bin/python -m seren_margin --config __CONFIG_PATH__
+
+# Margin also honors $SEREN_MARGIN_CONFIG and falls back to
+# ~/seren-margin/seren-margin.yaml, but the explicit --config above wins and
+# kills any ambiguity. Override individual values without touching the YAML:
+# Environment=SEREN_MARGIN_PORT=7421
+# Environment=SEREN_MARGIN_HOST=127.0.0.1
+
+# Restart policy - restart on crash but back off so a broken config doesn't
+# eat the system. 3 restarts in 5min = give up.
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=300
+
+# Modest memory ceiling - sqlite + FastAPI is tiny. Adjust if you must.
+MemoryMax=256M
+
+# Light hardening that doesn't break the localhost-bound, per-user use case.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
