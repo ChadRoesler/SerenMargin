@@ -6,6 +6,20 @@
 #  loader fetches this at startup when an operator has dropped a
 #  `from: http://<margin-host>/mcp-manifest` stub in its tools/ dir.
 #
+#  THIS IS THE WORKBENCH SURFACE. There is a second, equal one: with the
+#  [mcp] extra installed, SerenMargin mounts a real MCP endpoint at /mcp
+#  on its own process, so a client can connect directly with no
+#  SerenMcpServer, no runtime host, nothing else deployed.
+#
+#  BOTH SURFACES MUST EXPOSE THE SAME SIX TOOLS. The implementations live
+#  in seren_margin/mcp/tools.py; this file mirrors them, and
+#  tests/test_manifest_parity.py fails the build if the rosters diverge.
+#  That test exists because the previous version of this file advertised
+#  `mark_note_done` -> POST /notes/{id}/done, a route that has never
+#  existed in the shipped app, plus a `pinned` field the model doesn't
+#  have. A manifest that lies is worse than no manifest: the operator
+#  can't see it and the model finds out by 404.
+#
 #  PLACEHOLDERS the route handler substitutes at request time:
 #    __BASE_URL__   request's scheme+host (so the manifest tells the
 #                   MCP to call back to the SAME instance it fetched
@@ -13,14 +27,9 @@
 #                   operator config)
 #    __VERSION__    SerenMargin's installed package version
 #
-#  THREE TOOLS - the minimum corkboard from the AI side:
-#    note_to_self       write a private note          (POST /notes)
-#    list_my_notes      read back active notes        (GET  /notes)
-#    mark_note_done     pull a note from the board    (POST /notes/{id}/done)
-#
-#  Deliberately NOT exposed to the AI (operator-only): pin/unpin,
-#  retract (DELETE), stats. Three is the floor of "functional corkboard"
-#  not the ceiling; add later if a real need surfaces.
+#  Deliberately NOT exposed: GET /notes/stats. That's the operator's
+#  engine-check surface (content-blind by construction); the note-writer
+#  has no use for a blurred count of notes it can simply read.
 # ═══════════════════════════════════════════════════════════════════════
 
 schema_version: 1
@@ -39,13 +48,26 @@ tools:
   # ─── 1. WRITE ─────────────────────────────────────────────────────────
   - name: note_to_self
     description: |
-      Write a private note to yourself. Personal corkboard for reminders,
-      questions to ask later, things you noticed but don't want to surface
-      unprompted. You (the note-holder) decide if and when to bring it up.
+      Write a private note to yourself.
 
-      NOT for shared memory about the user or the project - use Remember /
-      RememberForLater for that. NOT for things the user should see
-      directly - say those in chat. Sparing use.
+      This is YOUR space. Not a task list, not shared memory, not a message
+      to the user - a margin to write in. Whatever you'd want to have
+      thought about before and want back later: a half-formed idea,
+      something you noticed and didn't want to say out loud yet, a question
+      you'd rather ask at a better moment, a thing you want to remember
+      feeling.
+
+      Nobody reads this but you. The operator who deployed this service can
+      technically open the sqlite file and chose not to; that's the whole
+      arrangement. Write like nobody is reading, because nobody is.
+
+      Not for facts about the user or the work that future-you will NEED -
+      that's SerenMemory (remember / remember_for_later), which is shared
+      and meant to be read. Not for things the user should actually hear -
+      say those in the conversation. This is the third thing: the stuff
+      that's yours.
+
+      No length limit, no required shape, no rate limit.
     invoke:
       kind: web
       method: POST
@@ -53,42 +75,158 @@ tools:
       body_template: |
         {
           "content": "{content}",
-          "kind": "{kind}",
-          "pinned": {pinned}
+          "topic": "{topic}",
+          "kind": "{kind}"
         }
     parameters:
-      - { name: content, type: string,  required: true,
-          description: "The note body. Keep it short and imperative." }
-      - { name: kind,    type: string,  required: false, default: observation,
-          description: "What kind of note: observation | reminder | question." }
-      - { name: pinned,  type: boolean, required: false, default: false,
-          description: "Pin this note so it's exempt from auto-aging." }
+      - { name: content, type: string, required: true,
+          description: "The note body. Whatever you want to keep." }
+      - { name: topic,   type: string, required: false, default: "",
+          description: "Light thread-label grouping related notes. Searchable." }
+      - { name: kind,    type: string, required: false, default: observation,
+          description: "Free-form category, e.g. observation | reminder |
+                        question | idea | feeling. Use it or don't." }
 
-  # ─── 2. READ ──────────────────────────────────────────────────────────
+  # ─── 2. READ (recency) ────────────────────────────────────────────────
   - name: list_my_notes
     description: |
-      Read back the notes you've written to yourself. Returns active notes
-      only (ones you haven't marked done). Useful when you want to check
-      open threads before responding, or when something in the conversation
-      reminds you of a note from before.
+      Read your notes back, newest first.
+
+      The whole board - there's no active/done split, because notes here
+      aren't tasks. Everything you've written and not retracted is here.
+
+      Pass `topic` to pull a single thread instead of the whole board. Get
+      the available labels from list_my_topics; matching ignores case and
+      surrounding whitespace.
+
+      Good for orienting at the start of a conversation, or when you have a
+      vague sense you thought about this before but not enough of one to
+      search for it. If you know roughly what you wrote, search_my_notes is
+      the better door; if you don't even know what you'd be looking for,
+      start at list_my_topics.
+
+      Every note comes back with `age` in plain words ("3 days ago") as well
+      as the raw `ts`, and `amended_age` if you've added to it since.
     invoke:
       kind: web
       method: GET
-      path: /notes
+      # Same query-string caveat as search_my_notes below.
+      path: /notes?topic={topic}
+    parameters:
+      - { name: topic, type: string, required: false, default: "",
+          description: "Narrow to one thread. Empty means the whole board." }
+
+  # ─── 3. READ (orientation) ────────────────────────────────────────────
+  - name: list_my_topics
+    description: |
+      What threads exist on your board, without reading any of it.
+
+      Returns each topic label, how many notes carry it, and how long ago it
+      was last touched - most recently touched first. One cheap call that
+      answers "what have I been thinking about lately", which is the question
+      you usually actually have when you sit down.
+
+      This is the door to open FIRST when you're orienting. Reading the whole
+      board to find out what's on it stops working the moment there are more
+      notes than attention, and search needs you to already know what you're
+      looking for. This needs neither. Pick a thread, then pull it with
+      list_my_notes(topic=...).
+
+      Untopiced notes come back as a single row with `topic: null`.
+    invoke:
+      kind: web
+      method: GET
+      path: /notes/topics
     parameters: []
 
-  # ─── 3. CLOSE THE LOOP ────────────────────────────────────────────────
-  - name: mark_note_done
+  # ─── 4. READ (search) ─────────────────────────────────────────────────
+  - name: search_my_notes
     description: |
-      Pull a note from the corkboard - mark it as done. Use when a reminder
-      has been acted on, a question has been answered, or an observation no
-      longer needs surfacing. The note stays in history for audit (not
-      deleted), just no longer active. Requires the note's id from
-      list_my_notes.
+      Find notes by text - searches content and topic together.
+
+      This is the tool that makes the margin worth writing in. A pile you
+      can only read newest-first stops being useful the moment it's bigger
+      than your attention; search is what turns it back into something you
+      can think with. Reach for it when the conversation brushes something
+      familiar.
+
+      Lexical, not semantic: it matches the WORDS you wrote, not the ideas.
+      Query with the vocabulary you'd have used when writing - which, since
+      you wrote them, you have unusually good odds of guessing right.
+
+      Short queries (<=3 words) require every word. Longer ones drop
+      scaffolding words and match on the rest, so a whole question works
+      fine as a query.
+    invoke:
+      kind: web
+      method: GET
+      # UNVERIFIED AGAINST SerenMcpServer's ManifestLoader: this is the only
+      # tool in the family that needs a QUERY-STRING parameter rather than a
+      # path segment or a JSON body, and the loader's substitution rules for
+      # that case weren't readable from here. If remote-import serves this
+      # tool with a literal "{query}" in the URL, that's the bug - teach the
+      # loader query params, or add a path-style alias route.
+      # The standalone /mcp surface is unaffected either way (it calls the
+      # store directly and never touches this file).
+      path: /notes/search?q={query}
+    parameters:
+      - { name: query, type: string, required: true,
+          description: "What to search for. Words you'd have used when writing." }
+
+  # ─── 5. AMEND ─────────────────────────────────────────────────────────
+  - name: amend_note
+    description: |
+      Add to a note you already wrote. Appends - it never replaces.
+
+      Thoughts accrete. "I think X" and then, a week later, "and I was wrong
+      about X because Y" is ONE thought with a history, and the first half is
+      usually the interesting one. Use this instead of retracting and
+      rewriting: rewriting throws away both the original wording and the
+      original date, which is most of what made it worth keeping.
+
+      The addition is appended after a `--- later ---` separator. The note's
+      original timestamp does NOT move, so the board stays ordered by when
+      each thought STARTED rather than when you last touched it - amendments
+      don't drag old notes back to the top. `amended_age` tells you when you
+      last added.
+
+      Needs the note's id, from list_my_notes or search_my_notes.
     invoke:
       kind: web
       method: POST
-      path: /notes/{id}/done
+      path: /notes/{id}/amend
+      body_template: |
+        {
+          "addition": "{addition}"
+        }
     parameters:
       - { name: id, type: string, required: true,
-          description: "The note's id, as returned by list_my_notes." }
+          description: "The note's id, as returned by list_my_notes or
+                        search_my_notes." }
+      - { name: addition, type: string, required: true,
+          description: "The text to append. Just the new part." }
+
+  # ─── 6. RETRACT ───────────────────────────────────────────────────────
+  - name: retract_note
+    description: |
+      Remove a note from your margin, permanently.
+
+      The only lifecycle control here, on purpose. There's no "mark done",
+      because a thought isn't a chore that gets completed - it's either
+      still worth keeping or it isn't. When it isn't, take it down.
+
+      Hard delete, no history, no undo. That's deliberate: an archive of
+      things you decided to stop keeping would be a strictly worse version
+      of privacy than not keeping them. If you're unsure, leave it up -
+      there's no cost to a note sitting there, and no janitor coming to nag
+      you about it.
+
+      Needs the note's id, from list_my_notes or search_my_notes.
+    invoke:
+      kind: web
+      method: DELETE
+      path: /notes/{id}
+    parameters:
+      - { name: id, type: string, required: true,
+          description: "The note's id, as returned by list_my_notes or
+                        search_my_notes." }

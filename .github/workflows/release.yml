@@ -31,7 +31,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install package and test deps
-        run: pip install -e ".[test]"
+        # [mcp] too, not just [test]: the MCP tests are gated on
+        # `pytest.importorskip("mcp")`, so without the extra installed CI would
+        # SKIP them silently and report green on an untested surface. Skips
+        # that look like passes are how a broken mount ships.
+        run: pip install -e ".[test,mcp]"
         working-directory: SerenMargin
         env:
           # Tests don't care about the real version; pin one so scm never has

@@ -2,23 +2,37 @@
 
 Endpoints:
     GET    /                  - service info
-    GET    /health            - liveness probe (Halls integration check)
-    GET    /mcp-manifest       - plug-and-play tool manifest for SerenMcpServer
-    POST   /notes             - write a note (model writes; no system writes)
-    GET    /notes             - list all notes, newest first (corkboard view)
+    GET    /health            - liveness probe
+    GET    /mcp-manifest      - plug-and-play tool manifest for SerenMcpServer
+    POST   /notes             - write a note (the writer writes; nothing else does)
+    GET    /notes             - list notes, newest first; ?topic= narrows
+    GET    /notes/search      - full-text search over content + topic
+    GET    /notes/topics      - thread labels + counts + last-touched
     GET    /notes/stats       - engine-check view; CONTENT-BLIND
     GET    /notes/{id}        - fetch one
-    DELETE /notes/{id}        - hard delete
+    POST   /notes/{id}/amend  - append to a note (never replaces)
+    DELETE /notes/{id}        - retract (hard delete)
+    /mcp                      - MCP server, ONLY when [mcp] extras are installed
 
-Route order matters: /notes/stats is registered BEFORE /notes/{note_id} so
-FastAPI's path matcher doesn't try to treat 'stats' as an id.
+Route order matters: /notes/stats, /notes/search and /notes/topics are ALL
+registered BEFORE /notes/{note_id} so FastAPI's path matcher doesn't try to
+treat 'stats', 'search' or 'topics' as a note id. Specific-before-generic; this
+bit us once already.
 
-No lifecycle: notes have no pin/expiry/done state and live until deleted, so
+No lifecycle: notes have no pin/expiry/done state and live until retracted, so
 there's no startup sweep and no background janitor.
+
+TWO WAYS TO REACH THE TOOLS, both first-class:
+    1. Workbench path - SerenMcpServer remote-imports GET /mcp-manifest and
+       proxies the tools as part of the wider constellation.
+    2. Standalone path - `pip install seren-margin[mcp]` mounts a real MCP
+       endpoint at /mcp on this same process, so a client can connect directly
+       with nothing else deployed.
+Same four tools either way, defined once in seren_margin.mcp.tools.
 """
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, AsyncExitStack
 from typing import Optional
 
 from fastapi import FastAPI, Body, HTTPException, Request
@@ -29,8 +43,9 @@ from importlib.metadata import version as pkg_version, PackageNotFoundError
 
 from . import __version__
 from .config import MarginConfig, load_config
-from .models import MarginNote, NoteCreate, NoteStats
+from .models import MarginNote, NoteAmend, NoteCreate, NoteStats
 from .store import MarginStore
+from ._diag import diag
 
 
 def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
@@ -39,10 +54,36 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Nothing to sweep - notes live until deleted. Just stash handles.
+        # Nothing to sweep - notes live until retracted. Just stash handles.
+        # These MUST be set before mount_mcp_routes runs; it reads them off
+        # app.state to wire the tools to live objects.
         app.state.store = store
         app.state.cfg = cfg
-        yield
+
+        # -- Optional MCP server --
+        # Mounted ONLY if the [mcp] extra is installed. A missing package falls
+        # back to pure-HTTP mode without crashing - the HTTP API and the
+        # /mcp-manifest workbench path are both fully usable without it.
+        try:
+            from .mcp.server import mount_mcp_routes
+            mcp_server = mount_mcp_routes(app)
+        except ImportError as exc:
+            mcp_server = None
+            diag(f"[seren-margin] MCP surface not available; HTTP-only mode ({exc})")
+        except Exception as exc:  # noqa: BLE001
+            mcp_server = None
+            diag(f"[seren-margin] MCP mount failed: {exc!r} - continuing without MCP")
+
+        # Enter the MCP session manager's task group if we mounted one (the
+        # streamable-HTTP transport needs it; a mounted sub-app's own lifespan
+        # doesn't fire under Starlette). AsyncExitStack makes HTTP-only mode a
+        # clean no-op.
+        async with AsyncExitStack() as _mcp_stack:
+            session_manager = getattr(mcp_server, "session_manager", None)
+            if session_manager is not None:
+                await _mcp_stack.enter_async_context(session_manager.run())
+                diag("[seren-margin] MCP session manager running")
+            yield
 
     app = FastAPI(
         title="SerenMargin",
@@ -58,6 +99,7 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
             "version": __version__,
             "ethos": "private by default, transparent in mechanism, opt-in by deploy",
             "stats_endpoint": "/notes/stats",
+            "finder": "fts" if store.has_fts else "like",
         }
 
     @app.get("/mcp-manifest", response_class=Response)
@@ -77,7 +119,9 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         Content-type is application/yaml so curl + the MCP loader both treat
         it as YAML. The file lives inside the package (mcp-manifest.yaml
         sibling to the API modules) so the manifest and the routes can't
-        drift on a release.
+        drift on a release - and tests/test_manifest_parity.py asserts the
+        tool roster matches seren_margin.mcp.tools, because "can't drift"
+        turned out to be optimistic the first time around.
         """
         base_url = f"{request.url.scheme}://{request.url.netloc}"
 
@@ -114,9 +158,53 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         return {"ok": True, "id": saved.id}
 
     @app.get("/notes")
-    async def list_notes(limit: int = 100):
-        notes = store.list_all(limit=limit)
-        return {"entries": [n.model_dump() for n in notes], "count": len(notes)}
+    async def list_notes(limit: int = 100, topic: Optional[str] = None):
+        notes = store.list_all(limit=limit, topic=topic or None)
+        return {
+            "entries": [n.model_dump() for n in notes],
+            "count": len(notes),
+            "topic": topic or None,
+        }
+
+    @app.post("/notes/{note_id}/amend")
+    async def amend_note(note_id: str, body: NoteAmend = Body(...)):
+        """Append to a note. Never replaces; see MarginStore.amend."""
+        if not body.addition.strip():
+            raise HTTPException(400, "addition must not be empty")
+        note = store.amend(note_id, body.addition)
+        if note is None:
+            raise HTTPException(404, f"no note '{note_id}'")
+        return {"ok": True, "id": note.id, "note": note.model_dump()}
+
+    # NOTE: /notes/search, /notes/stats and /notes/topics MUST all stay above
+    # /notes/{note_id}, or FastAPI matches them as a note id and 404s.
+    @app.get("/notes/topics")
+    async def list_topics():
+        """Thread labels with counts and last-touched times - orientation
+        without reading the board.
+
+        AI-facing, not part of the operator's engine-check: a topic label is a
+        phrase the writer chose, which makes it note content wearing a metadata
+        hat. It stays off /notes/stats for exactly that reason.
+        """
+        topics = store.list_topics()
+        return {"count": len(topics),
+                "topics": [t.model_dump() for t in topics]}
+    @app.get("/notes/search")
+    async def search_notes(q: str, limit: int = 20):
+        """Full-text search over content + topic.
+
+        `finder` in the response says which engine answered - 'fts' normally,
+        'like' on a sqlite built without FTS5. Surfaced rather than hidden so a
+        thin result set can be diagnosed instead of guessed at.
+        """
+        hits, finder = store.search(q, limit=limit)
+        return {
+            "query": q,
+            "finder": finder,
+            "count": len(hits),
+            "entries": [n.model_dump() for n in hits],
+        }
 
     @app.get("/notes/stats", response_model=NoteStats)
     async def get_stats():
@@ -124,6 +212,9 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
 
         For operators who want to validate the service is working without
         breaking their stated relational choice not to read individual notes.
+        Kinds are bucketed to a fixed vocabulary on the way out (see
+        models.bucket_kind) so a free-text kind can't smuggle note content into
+        the one endpoint built specifically to avoid showing it.
         """
         return store.stats()
 

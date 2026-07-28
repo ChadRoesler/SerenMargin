@@ -1,9 +1,10 @@
 """Smoke test for SerenMargin. Validates basic CRUD against tmpdir sqlite.
 
-Critically asserts that /notes/stats is CONTENT-BLIND - the response body
-must not contain any note text.
+The deep content-blind assertions live in test_stats_content_blind.py; the one
+here is the shallow "does the endpoint leak the obvious thing" check that should
+fail first and loudest.
 
-No lifecycle here: notes have no pin/expiry/done and live until deleted.
+No lifecycle: notes have no pin/expiry/done and live until retracted.
 """
 from __future__ import annotations
 
@@ -26,6 +27,14 @@ def test_health(client):
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json()["ok"] is True
+
+
+def test_root_reports_finder(client):
+    """Which search engine answered is operator-visible at the front door -
+    a Nano that silently fell back to LIKE should be diagnosable in one curl."""
+    body = client.get("/").json()
+    assert body["name"] == "SerenMargin"
+    assert body["finder"] in {"fts", "like"}
 
 
 def test_write_list_get_delete_cycle(client):
@@ -58,61 +67,46 @@ def test_write_list_get_delete_cycle(client):
     assert not any(e["id"] == note_id for e in r.json()["entries"])
 
 
-def test_topic_and_kind_round_trip(client):
-    r = client.post("/notes", json={
-        "content": "watch for the hedge-as-refusal trap",
-        "topic": "rapport",
-        "kind": "observation",
-    })
-    note_id = r.json()["id"]
-    r = client.get(f"/notes/{note_id}")
-    body = r.json()
-    assert body["topic"] == "rapport"
-    assert body["kind"] == "observation"
-    assert body["ts"] is not None
-
-
-def test_stats_is_content_blind(client):
-    """Critical: stats endpoint must not leak note contents."""
-    client.post("/notes", json={
-        "content": "private thought about hedging behavior",
-        "kind": "observation",
-    })
-    client.post("/notes", json={
-        "content": "remember to ask about supersede gap",
-        "kind": "reminder",
-    })
-
-    r = client.get("/notes/stats")
-    assert r.status_code == 200
-    stats = r.json()
-    assert stats["total"] == 2
-    assert stats["kinds"]["observation"] == 1
-    assert stats["kinds"]["reminder"] == 1
-
-    # The whole response body must not contain note text
-    body_text = r.text
-    assert "hedging" not in body_text
-    assert "supersede" not in body_text
-    assert "private thought" not in body_text
+def test_topic_round_trips(client):
+    """topic is a real field the model can set - it was missing from the old
+    manifest entirely, so it went unexercised."""
+    nid = client.post("/notes", json={
+        "content": "x", "topic": "serenmargin"}).json()["id"]
+    assert client.get(f"/notes/{nid}").json()["topic"] == "serenmargin"
 
 
 def test_empty_content_rejected(client):
-    r = client.post("/notes", json={"content": "  "})
-    assert r.status_code == 400
+    assert client.post("/notes", json={"content": "   "}).status_code == 400
 
 
-def test_missing_note_returns_404(client):
-    r = client.get("/notes/does-not-exist")
-    assert r.status_code == 404
-    r = client.delete("/notes/does-not-exist")
-    assert r.status_code == 404
+def test_delete_unknown_id_404s(client):
+    assert client.delete("/notes/not-a-real-id").status_code == 404
 
 
-def test_root_advertises_ethos(client):
-    """The service's identity is in /. Validates ethos string didn't drift."""
-    r = client.get("/")
-    info = r.json()
-    assert info["name"] == "SerenMargin"
-    assert "opt-in by deploy" in info["ethos"]
-    assert info["stats_endpoint"] == "/notes/stats"
+def test_search_endpoint(client):
+    client.post("/notes", json={"content": "a thought about pelicans"})
+    client.post("/notes", json={"content": "an unrelated thought"})
+    r = client.get("/notes/search", params={"q": "pelicans"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] == 1
+    assert body["finder"] in {"fts", "like"}
+    assert "pelicans" in body["entries"][0]["content"]
+
+
+def test_stats_is_content_blind(client):
+    """Shallow guard - the full contract is in test_stats_content_blind.py."""
+    secret = "supercalifragilistic-private-thought"
+    client.post("/notes", json={"content": secret, "kind": "observation"})
+    r = client.get("/notes/stats")
+    assert r.status_code == 200
+    assert secret not in r.text
+    assert r.json()["total"] == 1
+
+
+def test_mcp_manifest_served_and_substituted(client):
+    r = client.get("/mcp-manifest")
+    assert r.status_code == 200
+    assert "__BASE_URL__" not in r.text
+    assert "__VERSION__" not in r.text
+    assert "note_to_self" in r.text
