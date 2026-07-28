@@ -1,31 +1,32 @@
 # seren-margin.yaml - SerenMargin config (the friend-to-friend version)
 #
-# Lives at ~/seren-margin/seren-margin.yaml (the installer writes it there and
-# starts the service with --config pointing right at it). Same shape and
-# location convention as SerenMemory's seren-memory.yaml - learn one service,
-# you know them all. Set SEREN_MARGIN_CONFIG to override the location, or pass
-# --config / -c on the command line (highest priority).
+# Lives at ~/seren-margin/seren-margin.yaml. Same shape and location convention
+# as SerenMemory's seren-memory.yaml - learn one service, you know them all. Set
+# SEREN_MARGIN_CONFIG to override the location, or pass --config / -c on the
+# command line (highest priority).
 #
 # Precedence (highest wins): env vars > this file > built-in defaults.
 # Everything here is OPTIONAL - missing keys just use the defaults shown below.
-# Bad values are ignored (logged to stderr, fall back to the default).
+# Bad values are ignored (logged to stderr, fall back to the default), and a
+# malformed file falls back wholesale rather than crashing the service.
 #
 # The file is split into namespaced sections, lego-style. Each piece of the
 # Seren stack reads its own section and ignores the others:
 #   server:    <- this file's settings (what SerenMargin itself reads)
 #   tools:     <- reserved for the future plug-and-play MCP tool layer
-#                 (when the note_to_self write tool lands, ITS config lives
-#                  there, and SerenMargin still won't read that block)
 
 server:
   # Where sqlite lives. ~ is expanded.
   # Default: ~/.seren-margin/notes.db
   # db_path: ~/.seren-margin/notes.db
 
-  # Bind address. Localhost-only by default because private notes shouldn't
-  # be on a network without auth in front. (SerenMemory defaults to 0.0.0.0
-  # for the cluster; Margin deliberately does NOT - these are private notes.)
-  # Widen at your own risk, on purpose.
+  # Bind address. Localhost-only by default because private notes shouldn't be
+  # on a network without auth in front. (SerenMemory defaults to 0.0.0.0 for
+  # the cluster; Margin deliberately does NOT.)
+  #
+  # Installing the [mcp] extra does not change this. Mounting an MCP endpoint
+  # widens the TRANSPORT, not the LISTENER - /mcp is reachable exactly as far
+  # as this host setting says it is. Widen at your own risk, on purpose.
   # Default: 127.0.0.1
   # host: 127.0.0.1
 
@@ -33,14 +34,30 @@ server:
   # Default: 7421
   # port: 7421
 
-  # Active notes auto-expire after this many days unless pinned. Done notes
-  # also age out after the same window from done_at, so "marked done by
-  # mistake" can be reversed if caught within the window.
+  # NOTE: `notes_days` used to live here. It's GONE - it configured an
+  # auto-expiry sweep that was removed when the lifecycle was (no pin, no
+  # expiry, no done-state; notes live until retracted). The key outlived the
+  # feature and read like a promise the service wasn't keeping. If you have it
+  # in an existing config, it's ignored with a log line - safe to delete.
+
+
+# ── MCP knobs (env only, no YAML block yet) ─────────────────────────────────
+#
+# With `pip install 'seren-margin[mcp]'` the service mounts a real MCP endpoint
+# at /mcp on this same port. Tuned by environment variable, not by this file,
+# so the systemd/NSSM unit is the single place transport config lives:
+#
+#   SEREN_MARGIN_MCP_MOUNT            mount path       (default: /mcp)
+#   SEREN_MARGIN_MCP_ALLOWED_HOSTS    DNS-rebinding allowlist, comma-separated
+#                                     (default: unset = host check OFF)
+#   SEREN_MARGIN_MCP_ALLOWED_ORIGINS  optional, derived from HOSTS if omitted
+#
+# Without the extra installed, the service starts in HTTP-only mode and says so
+# in the log. Nothing else changes.
 
 
 # Reserved for the future plug-and-play MCP tool layer. SerenMargin itself
-# ignores this block. The MCP server is what'll read it when the note_to_self
-# write tool lands. Schema will mirror McpConfig's open shape:
+# ignores this block entirely. Schema will mirror McpConfig's open shape:
 #   tools:
 #     <tool_name>:
 #       <key>: <value>

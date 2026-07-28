@@ -23,6 +23,33 @@ test = [
     "pytest>=8.0",
     "httpx>=0.26",  # for fastapi TestClient
 ]
+mcp = [
+    # The Python MCP SDK from Anthropic. Mounts a real MCP endpoint at /mcp on
+    # this same process, so a client can reach its own margin with nothing else
+    # deployed - no SerenMcpServer, no runtime host.
+    #
+    # ── WHY THE <2 CAP IS NOT OPTIONAL ────────────────────────────────────
+    # mcp 2.0.0 REMOVED FastMCP. `mcp.server.fastmcp` does not exist in 2.x at
+    # all; the server class is now mcp.server.mcpserver.MCPServer with a
+    # different API. Our server.py (and SerenMemory's, and SerenLoci's) is
+    # written against FastMCP.
+    #
+    # The bare `mcp>=1.0` that the siblings still carry resolves to 2.0.0 on
+    # any fresh install TODAY. The import fails, app.py's ImportError gate
+    # catches it exactly as designed, and the service comes up in HTTP-only
+    # mode with a single log line - i.e. the MCP endpoint silently ceases to
+    # exist. A graceful fallback around a dependency break is indistinguishable
+    # from the extra not being installed, which is the worst possible failure
+    # mode: it looks like it's working.
+    #
+    # So: cap it, don't hope. Lift the cap in the same commit that ports
+    # server.py to the MCPServer API - across all three services at once, since
+    # they're deliberate copies of each other.
+    #
+    # Additive, not exclusive: once installed with [mcp], a later bare
+    # `pip install -U seren-margin` does NOT remove the mcp dep.
+    "mcp>=1.0,<2",
+]
 
 [project.scripts]
 seren-margin = "seren_margin.__main__:main"
@@ -36,6 +63,8 @@ testpaths = ["tests"]
 
 # Ship the MCP manifest inside the wheel - without this, pip strips the
 # non-.py file and GET /mcp-manifest 500s on an installed copy.
+# (The seren_margin.mcp SUBPACKAGE is pure .py and is picked up by the
+# `seren_margin*` glob above; this entry is only for the non-.py manifest.)
 [tool.setuptools.package-data]
 seren_margin = ["mcp-manifest.yaml"]
 

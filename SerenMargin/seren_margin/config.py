@@ -37,6 +37,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
+from ._diag import diag
+
 try:
     import yaml  # type: ignore[import-untyped]
     _HAS_YAML = True
@@ -62,10 +64,13 @@ class MarginConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = 7421
 
-    # Active notes auto-expire after this many days unless pinned. Done
-    # notes also age out after the same window from done_at, so a
-    # "marked done by mistake" can be reversed if caught within the window.
-    notes_days: int = 30
+    # REMOVED: notes_days. It configured an auto-expiry sweep that was taken
+    # out when the lifecycle was (no pin, no expiry, no done - notes live until
+    # retracted). The field outlived the feature and sat here reading like a
+    # promise: the README told operators notes aged out after 30 days, and
+    # nothing anywhere consumed the value. A config key that silently does
+    # nothing is the expensive kind of bug - it's not wrong until someone
+    # trusts it.
 
     def resolved_db_path(self) -> Path:
         return Path(self.db_path).expanduser()
@@ -112,18 +117,18 @@ def _load_yaml_lenient(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     if not _HAS_YAML:
-        print(f"[seren-margin] config: pyyaml not installed; ignoring {path}")
+        diag(f"[seren-margin] config: pyyaml not installed; ignoring {path}")
         return {}
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except Exception as e:
-        print(f"[seren-margin] config: failed to parse {path}: {e} (using defaults)")
+        diag(f"[seren-margin] config: failed to parse {path}: {e} (using defaults)")
         return {}
     if data is None:
         return {}
     if not isinstance(data, dict):
-        print(f"[seren-margin] config: {path} top-level must be a mapping; got {type(data).__name__} (using defaults)")
+        diag(f"[seren-margin] config: {path} top-level must be a mapping; got {type(data).__name__} (using defaults)")
         return {}
     return data
 
@@ -134,10 +139,10 @@ def _apply_server_overrides(cfg: MarginConfig, server: dict[str, Any], *, source
     """
     # Whitelist of known keys to keep YAML from setting arbitrary attributes.
     # (If you add a field to MarginConfig, add it here too.)
-    known = {"db_path", "host", "port", "notes_days"}
+    known = {"db_path", "host", "port"}
     for key, raw in server.items():
         if key not in known:
-            print(f"[seren-margin] config: ignoring unknown server key '{key}' from {source}")
+            diag(f"[seren-margin] config: ignoring unknown server key '{key}' from {source}")
             continue
         try:
             # Use pydantic's validation by round-tripping through model_validate
@@ -145,7 +150,7 @@ def _apply_server_overrides(cfg: MarginConfig, server: dict[str, Any], *, source
             current[key] = raw
             cfg.__dict__.update(MarginConfig.model_validate(current).__dict__)
         except Exception as e:
-            print(f"[seren-margin] config: ignored bad value for '{key}' from {source}: {e}")
+            diag(f"[seren-margin] config: ignored bad value for '{key}' from {source}: {e}")
 
 
 def load_config(path: Optional[str] = None) -> MarginConfig:
@@ -164,7 +169,7 @@ def load_config(path: Optional[str] = None) -> MarginConfig:
         if isinstance(server, dict):
             _apply_server_overrides(cfg, server, source=str(yaml_path))
         elif server is not None:
-            print(f"[seren-margin] config: 'server' in {yaml_path} must be a mapping; ignoring")
+            diag(f"[seren-margin] config: 'server' in {yaml_path} must be a mapping; ignoring")
         # NOTE: data.get('tools') is intentionally NOT read here. That section
         # is reserved for a future plug-and-play MCP tool layer, which has its
         # own loader. Same file, different reader, by design.
@@ -174,7 +179,6 @@ def load_config(path: Optional[str] = None) -> MarginConfig:
         "SEREN_MARGIN_DB": "db_path",
         "SEREN_MARGIN_HOST": "host",
         "SEREN_MARGIN_PORT": "port",
-        "SEREN_MARGIN_NOTES_DAYS": "notes_days",
     }
     env_overrides: dict[str, Any] = {}
     for env_key, attr in env_map.items():
