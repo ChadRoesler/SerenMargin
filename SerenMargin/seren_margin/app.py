@@ -37,28 +37,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Body, HTTPException, Request
 from fastapi.responses import Response
-# SerenMargin is STANDALONE BY DESIGN - seren-meninges is NOT a core
-# dependency here, only the [updates] extra pulls it. So this import must be
-# allowed to fail: a bare `pip install seren-margin` has to start.
-#
-# The fallback duplicates the seven-key shape rather than reusing
-# UpdateStatus, because when meninges is absent there is no UpdateStatus to
-# reuse. If the contract in seren_meninges/updates.py ever changes shape,
-# change it here too - tests/test_updates_contract.py pins them together.
-try:
-    from seren_meninges.updates import updates_payload
-except ImportError:  # meninges not installed - update checking is opt-in
-    async def updates_payload(checker, *, distribution, installed):  # type: ignore[misc]
-        return {
-            "status": "unavailable",
-            "distribution": distribution,
-            "installed": installed,
-            "latest": None,
-            "update_available": False,
-            "detail": "update checking not installed - "
-                      f"pip install '{distribution}[updates]'",
-            "checked_at": None,
-        }
+from seren_meninges.updates import updates_payload
 
 from importlib.resources import files
 from importlib.metadata import version as pkg_version, PackageNotFoundError
