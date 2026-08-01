@@ -37,15 +37,21 @@ from typing import Optional
 
 from fastapi import FastAPI, Body, HTTPException, Request
 from fastapi.responses import Response
+from seren_meninges.updates import updates_payload
 
 from importlib.resources import files
 from importlib.metadata import version as pkg_version, PackageNotFoundError
 
-from . import __version__
+
 from .config import MarginConfig, load_config
 from .models import MarginNote, NoteAmend, NoteCreate, NoteStats
 from .store import MarginStore
 from ._diag import diag
+import logging
+from . import __version__ as _fallback_version
+
+log = logging.getLogger("seren_margin")
+APP_VERSION = get_version("seren-margin", fallback=_fallback_version)
 
 
 def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
@@ -78,6 +84,26 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         # streamable-HTTP transport needs it; a mounted sub-app's own lifespan
         # doesn't fire under Starlette). AsyncExitStack makes HTTP-only mode a
         # clean no-op.
+        try:
+            from seren_meninges.updates import UpdateChecker
+            app.state.updates = UpdateChecker(
+                "seren-margin",
+                enabled=cfg.updates.enabled,
+                index_url=cfg.updates.index_url,
+                ttl_seconds=cfg.updates.check_interval_hours * 3600.0,
+                allow_prerelease=cfg.updates.allow_prerelease,
+                fallback_version=APP_VERSION,
+            )
+        # Catch EVERYTHING, not just ImportError. This whole feature is cosmetic -
+        # seren_meninges/version.py states the contract: a version read must never
+        # crash startup. A too-narrow catch here already bit us: cfg.updates was
+        # missing, the AttributeError sailed past `except ImportError`, and five
+        # services failed to boot on a feature that only draws a badge.
+        except Exception as exc:
+            app.state.updates = None
+            log.info("update checking unavailable (%s)", exc)
+
+
         async with AsyncExitStack() as _mcp_stack:
             session_manager = getattr(mcp_server, "session_manager", None)
             if session_manager is not None:
@@ -88,18 +114,21 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
     app = FastAPI(
         title="SerenMargin",
         description="Private notes-to-self. Standalone, opt-in, opinionated.",
-        version=__version__,
+        version=APP_VERSION,
         lifespan=lifespan,
     )
 
     @app.get("/")
-    async def root():
+    async def root(request: Request):
         return {
             "name": "SerenMargin",
-            "version": __version__,
+            "version": APP_VERSION,
             "ethos": "private by default, transparent in mechanism, opt-in by deploy",
             "stats_endpoint": "/notes/stats",
             "finder": "fts" if store.has_fts else "like",
+            "updates": await updates_payload(
+                getattr(request.app.state, "updates", None),
+                distribution="seren-margin", installed=APP_VERSION),
         }
 
     @app.get("/mcp-manifest", response_class=Response)

@@ -35,7 +35,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ._diag import diag
 
@@ -47,6 +47,19 @@ except ImportError:  # pragma: no cover - pyyaml is a hard dep, but be lenient
 
 
 # -- service config model ----------------------------------------------------
+
+
+class UpdatesConfig(BaseModel):
+    """\"Is there a newer seren-margin\" checking. Cosmetic, opt-outable.
+
+    Needs seren-meninges[updates]. Without it the check reports
+    status="unavailable" rather than silently reading as "you're current" -
+    see seren_meninges/updates.py for why that distinction is load-bearing.
+    """
+    enabled: bool = True
+    check_interval_hours: float = 6.0
+    index_url: str = "https://pypi.org/pypi/{distribution}/json"
+    allow_prerelease: bool = False
 
 
 class MarginConfig(BaseModel):
@@ -63,6 +76,7 @@ class MarginConfig(BaseModel):
     # to widen. (Memory defaults 0.0.0.0; Margin does NOT - private notes.)
     host: str = "127.0.0.1"
     port: int = 7421
+    updates: UpdatesConfig = Field(default_factory=UpdatesConfig)
 
     # REMOVED: notes_days. It configured an auto-expiry sweep that was taken
     # out when the lifecycle was (no pin, no expiry, no done - notes live until

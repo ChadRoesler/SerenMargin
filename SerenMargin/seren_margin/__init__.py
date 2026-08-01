@@ -6,14 +6,10 @@ offer-and-accept. Standalone service, opt-in by deploy (not by config flag).
 """
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version
-
+# Version flows from the git tag via setuptools-scm (written to _version.py at
+# build time, read here). Fallback only fires in a bare source checkout that was
+# never built. Mirrors SerenLoci/SCC so the family exposes __version__ alike.
 try:
-    # The real version is baked into the wheel by setuptools-scm at build time
-    # (from the git tag) and read back here via the installed metadata. This
-    # replaces the old hardcoded "0.1.0" that would report the same string
-    # forever regardless of the tag.
-    __version__: str = version("seren-margin")
-except PackageNotFoundError:
-    # Running from a source checkout without an install (or a tagless tree).
-    __version__ = "0.0.0.dev0"
+    from ._version import version as __version__
+except Exception:  # noqa: BLE001 - source checkout without a build
+    __version__ = "0.0.0+unknown"

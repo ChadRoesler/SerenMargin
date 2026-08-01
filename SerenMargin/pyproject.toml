@@ -50,9 +50,23 @@ mcp = [
     # `pip install -U seren-margin` does NOT remove the mcp dep.
     "mcp>=1.0,<2",
 ]
+# "is there a newer seren-lodestar" reporting on GET /. Opt-in, because a
+# service that never leaves a LAN has no reason to talk to PyPI. Pulls the
+# Meninges extra rather than httpx/packaging directly - the check lives in
+# seren_meninges.updates and only one repo should own that dep set.
+#
+# The floor matches the core dep above: updates.py landed in Meninges 2.0.0.
+# Resolve anything older and the lifespan import fails, leaving you with
+# status="unavailable" forever and no obvious reason why.
+updates = ["seren-meninges[updates]>=2.0.0,<3"]
 
 [project.scripts]
 seren-margin = "seren_margin.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/ChadRoesler/SerenMargin"
+Repository = "https://github.com/ChadRoesler/SerenMargin"
+"Bug Tracker" = "https://github.com/ChadRoesler/SerenMargin/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -73,7 +87,7 @@ seren_margin = ["mcp-manifest.yaml"]
 # Kills the old frozen `version = "0.1.0"` that would publish the same string
 # forever. _version.py is gitignored - a build artifact, never committed.
 [tool.setuptools_scm]
-# .git is one level above pyproject.toml (repo root, not the SerenMargin subdir)
+# .git is one level above pyproject.toml (repo root)
 root = ".."
 version_scheme = "release-branch-semver"
 version_file = "seren_margin/_version.py"
