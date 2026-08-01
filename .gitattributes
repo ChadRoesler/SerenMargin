@@ -1,0 +1,66 @@
+# ══════════════════════════════════════════════════════════════════════════
+#  Line-ending policy for SerenSetupScripts
+# ══════════════════════════════════════════════════════════════════════════
+#
+#  WHY THIS FILE IS MORE THAN `* text=auto`:
+#
+#  `text=auto` normalizes to LF *in the repository* but checks out with
+#  NATIVE endings. On a Windows checkout that means every .sh comes back as
+#  CRLF, gets edited, and gets committed with CRLF still in it.
+#
+#  A .sh file with CRLF does not merely look untidy - it DOES NOT PARSE.
+#  bash sees the trailing \r as part of the token:
+#
+#      seren-margin-setup.sh: line 43: syntax error near unexpected token `$'{\r''
+#
+#  This has now bitten twice. The second time, all seven seren-*-setup.sh
+#  installers plus seren-install-lib.sh plus setup-seren-python-service.sh
+#  were simultaneously unrunnable on every Linux and macOS box - which is
+#  every Jetson in the cluster - while looking completely fine in an editor
+#  and in a GitHub diff.
+#
+#  The explicit `eol=` rules below beat the native-checkout default, so a
+#  Windows working tree gets LF for shell scripts no matter what. This is
+#  the recurrence fix; the file conversions were the one-time repair.
+#
+#  Guard for the next time anyway - it costs nothing and it's the only
+#  check that catches this before a Jetson does:
+#      bash -n path/to/script.sh
+# ══════════════════════════════════════════════════════════════════════════
+
+# Sensible default for everything not named below.
+* text=auto
+
+# ── Shell: LF, always, everywhere ─────────────────────────────────────────
+# Non-negotiable. CRLF here is a parse error, not a style preference.
+*.sh    text eol=lf
+*.bash  text eol=lf
+
+# ── PowerShell: deliberately NOT pinned ───────────────────────────────────
+# There is no *.ps1 rule here, and that's on purpose.
+#
+# PowerShell reads LF perfectly well - CRLF is a preference for .ps1, not a
+# requirement, which is the whole difference from .sh above. The tree is
+# currently mixed (some CRLF, some LF) and it works fine either way.
+#
+# Pinning eol=crlf would rewrite every LF file on the next checkout: a
+# whole-file churn across nine scripts, blowing up `git blame`, to fix
+# nothing. `* text=auto` handles them well enough. Only pin an ending when
+# the wrong one BREAKS something.
+
+# ── Config / docs ─────────────────────────────────────────────────────────
+# YAML and systemd units are read by Linux tooling; keep them LF too.
+*.yaml    text eol=lf
+*.yml     text eol=lf
+*.service text eol=lf
+*.plist   text eol=lf
+*.md      text
+
+# ── Binary: never touched ─────────────────────────────────────────────────
+*.png   binary
+*.jpg   binary
+*.gif   binary
+*.ico   binary
+*.whl   binary
+*.gz    binary
+*.zip   binary
