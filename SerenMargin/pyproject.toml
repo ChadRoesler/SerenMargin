@@ -58,7 +58,7 @@ mcp = [
 # The floor matches the core dep above: updates.py landed in 2.0.0 and updates_payload in 2.1.0.
 # Resolve anything older and the lifespan import fails, leaving you with
 # status="unavailable" forever and no obvious reason why.
-updates = ["seren-meninges[updates]>=2.0.0,<3"]
+updates = ["seren-meninges[updates]>=2.1.0,<3"]
 
 [project.scripts]
 seren-margin = "seren_margin.__main__:main"

@@ -46,8 +46,108 @@ jobs:
         run: python -m pytest tests/ -v
         working-directory: SerenMargin
 
+  # ── Install shapes ──────────────────────────────────────────────────────
+  #
+  # WHY THIS EXISTS, SEPARATELY FROM `test`:
+  #
+  # The `test` job installs -e ".[test,mcp]" and runs pytest from inside the
+  # repo. That proves the code works when every dev dependency is present and
+  # the source tree is on sys.path. It proves nothing about what an operator
+  # gets from `pip install seren-margin`.
+  #
+  # Two real breakages got past `test` and would have been caught here:
+  #
+  #   1. app.py once imported seren_meninges UNCONDITIONALLY at module scope.
+  #      Meninges is NOT a core dep of Margin - it arrives only with
+  #      [updates] - so a bare install could not start. Invisible to `test`,
+  #      whose install pulls meninges in anyway.
+  #   2. A dependency floor that is satisfied-but-stale (seren-meninges>=2.0.0
+  #      happily resolving 2.0.0 after 2.1.0 shipped) only shows up when you
+  #      resolve the package for real, from the index, in a clean env.
+  #
+  # So: install each SHAPE an operator can actually ask for, then import the
+  # app FROM OUTSIDE THE REPO so the source tree cannot mask a missing dep.
+  install-shapes:
+    runs-on: ubuntu-latest
+    name: "Install ${{ matrix.shape.label }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        shape:
+          # bare is the important one - it is the default `pip install`, and
+          # it is the shape with the fewest packages to hide a mistake behind.
+          - { label: "bare",      spec: ".",           updates: "unavailable" }
+          - { label: "[mcp]",     spec: ".[mcp]",      updates: "unavailable" }
+          - { label: "[updates]", spec: ".[updates]",  updates: "wired" }
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # setuptools-scm needs full history + tags
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ${{ matrix.shape.spec }}
+        run: pip install "${{ matrix.shape.spec }}"
+        working-directory: SerenMargin
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: "0.0.0"
+
+      - name: Install a test client (NOT part of the shape under test)
+        # starlette's TestClient needs httpx at runtime. It is a test tool, not
+        # something seren_margin imports, so adding it cannot mask a missing
+        # runtime dependency - but leaving it out makes the smoke step fail for
+        # a reason that has nothing to do with the install shape.
+        run: pip install "httpx2" || pip install "httpx"
+
+      - name: Import and construct the app OUT OF TREE
+        # cd to a scratch dir first. Running from the repo puts ./seren_margin
+        # on sys.path, which is exactly how a missing dependency stays hidden.
+        run: |
+          cd "$(mktemp -d)"
+          python - <<'PY'
+          import asyncio, sys
+          from seren_margin.app import create_app
+
+          app = create_app()
+          print("app constructed OK")
+
+          # The update block must exist and be well-formed in EVERY shape.
+          from fastapi.testclient import TestClient
+          with TestClient(app) as c:
+              body = c.get("/").json()
+
+          u = body.get("updates")
+          assert isinstance(u, dict), f"GET / must always carry an updates dict, got {u!r}"
+          expected_keys = {"status", "distribution", "installed", "latest",
+                           "update_available", "detail", "checked_at"}
+          assert set(u) == expected_keys, f"key drift: {set(u) ^ expected_keys}"
+          assert isinstance(u["update_available"], bool)
+
+          shape = "${{ matrix.shape.updates }}"
+          if shape == "unavailable":
+              # No [updates] extra -> must say so plainly, and must NEVER
+              # report a clean bill of health it has no way to verify.
+              assert u["status"] == "unavailable", f"expected unavailable, got {u['status']}"
+              assert u["update_available"] is False
+              assert u["detail"], "unavailable must carry a reason"
+          else:
+              # With the extra, anything except "unavailable" is fine - the
+              # runner may or may not reach PyPI, and "error" is a correct
+              # answer for a box with no network.
+              assert u["status"] != "unavailable", (
+                  "[updates] installed but the checker did not wire up - "
+                  "usually a seren-meninges floor that resolved something too old"
+              )
+          print(f"updates block OK: status={u['status']}")
+          PY
+
   build-and-release:
-    needs: test
+    needs: [test, install-shapes]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 
