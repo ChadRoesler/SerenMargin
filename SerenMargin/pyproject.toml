@@ -16,6 +16,15 @@ dependencies = [
     "uvicorn[standard]>=0.27",
     "pydantic>=2.5",
     "pyyaml>=6.0",
+    # The shared Seren core. Margin resisted this for a long time and the
+    # reasoning was sound: "standalone, opt-in by deploy". Taken on now because
+    # update checking moved into meninges core, and a stale private-notes
+    # service is exactly the bad time that change exists to prevent.
+    #
+    # The standalone promise is intact as written - it always meant "no other
+    # SERVICES required" (no Workbench, no cluster head), not "no shared
+    # library". Margin still runs alone on localhost with nothing else deployed.
+    "seren-meninges>=2.2.0,<3",
 ]
 
 [project.optional-dependencies]
@@ -58,7 +67,11 @@ mcp = [
 # The floor matches the core dep above: updates.py landed in 2.0.0 and updates_payload in 2.1.0.
 # Resolve anything older and the lifespan import fails, leaving you with
 # status="unavailable" forever and no obvious reason why.
-updates = ["seren-meninges[updates]>=2.1.0,<3"]
+# Kept as an EMPTY alias. Update checking is CORE in seren-meninges, and
+# meninges is now a core dep of Margin, so there is nothing left to install.
+# The name stays because the Starwright installers pass --updates and an
+# unknown extra only earns a warning that teaches people to ignore warnings.
+updates = []
 
 [project.scripts]
 seren-margin = "seren_margin.__main__:main"
