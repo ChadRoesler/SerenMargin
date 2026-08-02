@@ -202,4 +202,11 @@ def load_config(path: Optional[str] = None) -> MarginConfig:
     if env_overrides:
         _apply_server_overrides(cfg, env_overrides, source="environment")
 
+    # Update checking is cosmetic, so it gets a deploy-time off switch that
+    # needs no config file. Set directly rather than through
+    # _apply_server_overrides, which validates against the FLAT server keys
+    # and would reject a nested block.
+    if (v := os.getenv("SEREN_MARGIN_UPDATES_ENABLED")) is not None:
+        cfg.updates.enabled = v.strip().lower() in ("1", "true", "yes", "on")
+
     return cfg

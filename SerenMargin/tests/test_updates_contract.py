@@ -1,14 +1,18 @@
-"""The ImportError fallback in app.py must not drift from the real contract.
+"""Margin must use the SHARED update payload, not a local copy of it.
 
-SerenMargin is standalone by design: seren-meninges is NOT a core dependency,
-only the [updates] extra pulls it. So app.py carries its own tiny
-``updates_payload`` fallback for a bare install. That fallback duplicates the
-seven-key shape by necessity - when meninges is absent there is no
-UpdateStatus to reuse - and duplication drifts.
+History, because the invariant reversed and the reason matters:
 
-This test reads the fallback's literal dict straight out of the source with
-ast and compares its keys to the real UpdateStatus. No import gymnastics, and
-it fails the moment either side grows or loses a key.
+Margin used to keep its own ``updates_payload`` fallback behind a
+``try/except ImportError``, because seren-meninges was an optional dependency
+here and a bare ``pip install seren-margin`` had to start without it. That
+fallback duplicated the seven-key payload shape, and this test existed to stop
+the two copies drifting.
+
+seren-meninges is a CORE dependency now - update checking moved into the
+shared core so it is present everywhere rather than being decided by whichever
+transitive dependency happened to supply httpx. The fallback became dead code
+and was removed, so the thing worth pinning flipped: there must be exactly ONE
+definition of that payload, and Margin must not grow a second one back.
 """
 from __future__ import annotations
 
@@ -17,55 +21,49 @@ import pathlib
 
 import pytest
 
-
-def _fallback_keys() -> set[str]:
-    """Keys of the dict literal returned by the fallback in app.py."""
-    src = (pathlib.Path(__file__).resolve().parents[1]
-           / "seren_margin" / "app.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
-    for node in ast.walk(tree):
-        # the fallback is the async def updates_payload defined inside the
-        # `except ImportError:` handler at module scope
-        if isinstance(node, ast.Try):
-            for handler in node.handlers:
-                for sub in ast.walk(handler):
-                    if (isinstance(sub, ast.AsyncFunctionDef)
-                            and sub.name == "updates_payload"):
-                        for ret in ast.walk(sub):
-                            if isinstance(ret, ast.Return) and isinstance(ret.value, ast.Dict):
-                                return {k.value for k in ret.value.keys
-                                        if isinstance(k, ast.Constant)}
-    pytest.fail("no ImportError fallback for updates_payload found in app.py")
+APP = pathlib.Path(__file__).resolve().parents[1] / "seren_margin" / "app.py"
 
 
-def test_fallback_exists_at_all():
-    """If someone 'tidies up' the try/except, a bare `pip install seren-margin`
-    starts failing at import. Catch that here, not in an operator's terminal."""
-    assert _fallback_keys(), "app.py must keep its meninges-absent fallback"
+def _tree() -> ast.Module:
+    return ast.parse(APP.read_text(encoding="utf-8"))
 
 
-def test_fallback_keys_match_the_real_contract():
-    updates = pytest.importorskip(
-        "seren_meninges.updates", reason="meninges not installed (bare install)")
-    real = set(updates.UpdateStatus(status="x", distribution="y").as_dict())
-    assert _fallback_keys() == real, (
-        "app.py's offline fallback drifted from seren_meninges UpdateStatus - "
-        "a renderer reading one shape would break on the other")
+def test_app_imports_the_shared_payload_helper():
+    """One source of truth. If this import goes away, something local replaced
+    it and the shape can drift from seren_meninges again."""
+    src = APP.read_text(encoding="utf-8")
+    assert "from seren_meninges.updates import updates_payload" in src, (
+        "app.py must import updates_payload from seren_meninges - meninges is "
+        "a core dependency now, so there is no reason for a local copy"
+    )
 
 
-def test_fallback_never_claims_an_update():
-    """update_available must be a hard False. 'I could not check' rendering as
-    a green tick is the exact failure this whole feature exists to avoid."""
-    src = (pathlib.Path(__file__).resolve().parents[1]
-           / "seren_margin" / "app.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
-    found = False
-    for node in ast.walk(tree):
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "updates_payload":
-            for ret in ast.walk(node):
-                if isinstance(ret, ast.Return) and isinstance(ret.value, ast.Dict):
-                    for k, v in zip(ret.value.keys, ret.value.values):
-                        if isinstance(k, ast.Constant) and k.value == "update_available":
-                            assert isinstance(v, ast.Constant) and v.value is False
-                            found = True
-    assert found, "fallback must set update_available explicitly to False"
+def test_app_does_not_define_its_own_updates_payload():
+    """The regression this file now guards. A local def means a second copy of
+    the seven-key contract with nothing keeping the two in step."""
+    for node in ast.walk(_tree()):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            assert node.name != "updates_payload", (
+                "app.py defines its own updates_payload. That fallback existed "
+                "only while seren-meninges was optional; it is core now, so a "
+                "local definition is a duplicate contract waiting to drift."
+            )
+
+
+def test_the_shared_helper_still_has_the_shape_margin_serves():
+    """Margin hands this dict straight out of GET /. If seren_meninges changes
+    the key set, Margin's consumers break - so assert the shape from here too,
+    where a failure names Margin rather than a library."""
+    updates = pytest.importorskip("seren_meninges.updates")
+    keys = set(updates.UpdateStatus(status="x", distribution="y").as_dict())
+    assert keys == {"status", "distribution", "installed", "latest",
+                    "update_available", "detail", "checked_at"}
+
+
+def test_root_route_actually_serves_the_payload():
+    """Belt and braces: the helper being imported is not the same as it being
+    wired into the response."""
+    src = APP.read_text(encoding="utf-8")
+    assert '"updates": await updates_payload(' in src, (
+        "GET / must call updates_payload - importing it is not enough"
+    )

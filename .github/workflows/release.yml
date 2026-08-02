@@ -128,21 +128,37 @@ jobs:
           assert set(u) == expected_keys, f"key drift: {set(u) ^ expected_keys}"
           assert isinstance(u["update_available"], bool)
 
-          shape = "${{ matrix.shape.updates }}"
-          if shape == "unavailable":
-              # No [updates] extra -> must say so plainly, and must NEVER
-              # report a clean bill of health it has no way to verify.
-              assert u["status"] == "unavailable", f"expected unavailable, got {u['status']}"
+          KNOWN = {"ok", "disabled", "unavailable", "error"}
+          assert u["status"] in KNOWN, f"unknown status {u['status']!r}"
+          if u["status"] == "unavailable":
               assert u["update_available"] is False
-              assert u["detail"], "unavailable must carry a reason"
-          else:
-              # With the extra, anything except "unavailable" is fine - the
-              # runner may or may not reach PyPI, and "error" is a correct
-              # answer for a box with no network.
-              assert u["status"] != "unavailable", (
-                  "[updates] installed but the checker did not wire up - "
-                  "usually a seren-meninges floor that resolved something too old"
-              )
+              assert u["detail"], "unavailable must say how to fix it"
+
+          # THIS ASSERTION USED TO BE ITS OWN OPPOSITE. Margin previously
+          # refused seren-meninges entirely and this step proved it was absent
+          # on a bare install. Meninges is a core dependency now - update
+          # checking moved into the shared core so it is guaranteed rather than
+          # decided by whichever transitive dep supplied httpx - so the promise
+          # being checked flipped with it.
+          #
+          # Margin is still standalone in the sense that always mattered: no
+          # other SERVICE is required, it runs alone on localhost. What changed
+          # is that it shares a library.
+          import importlib.util
+          assert importlib.util.find_spec("seren_meninges") is not None, (
+              "seren_meninges missing - it is a core dependency of Margin now, "
+              "so every install shape must have it"
+          )
+
+          # Update checking is core, so it must be wired in EVERY shape, bare
+          # included. "unavailable" means the checker was never built or its
+          # deps are missing, which now can only mean meninges resolved too
+          # old. "error" is still fine - no egress is a legitimate answer.
+          assert u["status"] != "unavailable", (
+              f"status=unavailable in shape ${{{{ matrix.shape.label }}}} - update "
+              f"checking is core now, so this means seren-meninges resolved too "
+              f"old or the checker was never constructed. detail={u['detail']}"
+          )
           print(f"updates block OK: status={u['status']}")
           PY
 

@@ -37,28 +37,8 @@ from typing import Optional
 
 from fastapi import FastAPI, Body, HTTPException, Request
 from fastapi.responses import Response
-# SerenMargin is STANDALONE BY DESIGN - seren-meninges is NOT a core
-# dependency here, only the [updates] extra pulls it. So this import must be
-# allowed to fail: a bare `pip install seren-margin` has to start.
-#
-# The fallback duplicates the seven-key shape rather than reusing
-# UpdateStatus, because when meninges is absent there is no UpdateStatus to
-# reuse. If the contract in seren_meninges/updates.py ever changes shape,
-# change it here too - tests/test_updates_contract.py pins them together.
-try:
-    from seren_meninges.updates import updates_payload
-except ImportError:  # meninges not installed - update checking is opt-in
-    async def updates_payload(checker, *, distribution, installed):  # type: ignore[misc]
-        return {
-            "status": "unavailable",
-            "distribution": distribution,
-            "installed": installed,
-            "latest": None,
-            "update_available": False,
-            "detail": "update checking not installed - "
-                      f"pip install '{distribution}[updates]'",
-            "checked_at": None,
-        }
+from seren_meninges import get_version
+from seren_meninges.updates import updates_payload
 
 from importlib.resources import files
 from importlib.metadata import version as pkg_version, PackageNotFoundError
@@ -72,15 +52,12 @@ import logging
 from . import __version__ as _fallback_version
 
 log = logging.getLogger("seren_margin")
-# NOT seren_meninges.get_version, deliberately. The rest of the family uses
-# that helper, but meninges is an OPTIONAL dependency here (see the [updates]
-# extra) and a bare `pip install seren-margin` must still start. importlib
-# .metadata is stdlib and already imported above for exactly this reason, so
-# Margin resolves its own version without reaching for the shared core.
-try:
-    APP_VERSION = pkg_version("seren-margin")
-except PackageNotFoundError:      # source checkout, no installed metadata
-    APP_VERSION = _fallback_version
+# Uses the shared helper like the rest of the family. This was a local
+# importlib.metadata dance while seren-meninges was optional here; meninges is
+# a core dependency now, so the special case is gone. Same behaviour either
+# way - installed metadata, falling back to the package __version__ for a
+# source checkout - just one implementation instead of two.
+APP_VERSION = get_version("seren-margin", fallback=_fallback_version)
 
 
 def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
