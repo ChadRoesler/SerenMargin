@@ -198,7 +198,7 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
 
     @app.get("/health")
     async def health():
-        return {"ok": True, "service": "seren-margin", "version": __version__}
+        return {"ok": True, "service": "seren-margin", "version": APP_VERSION}
 
     # ── note CRUD ─────────────────────────────────────────────────────────
 
