@@ -57,7 +57,7 @@ mcp = [
     #
     # Additive, not exclusive: once installed with [mcp], a later bare
     # `pip install -U seren-margin` does NOT remove the mcp dep.
-    "mcp>=1.0,<2",
+    "mcp>=1.0,<3",
 ]
 # "is there a newer seren-lodestar" reporting on GET /. Opt-in, because a
 # service that never leaves a LAN has no reason to talk to PyPI. Pulls the
