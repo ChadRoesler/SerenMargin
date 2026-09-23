@@ -29,11 +29,25 @@ server:
   # as this host setting says it is. Widen at your own risk, on purpose.
   # Default: 127.0.0.1
   # host: 127.0.0.1
+
+  # A token, IF you want one. Not required on loopback - the bind is the guard
+  # and nobody has to configure a secret to keep a diary on their own box.
+  # Beyond loopback the family's rule applies: no token, no start. Pick ONE
+  # pointer; every sibling uses the same three. Env vars:
+  # SEREN_MARGIN_BEARER_TOKEN / _BEARER_TOKEN_ENV / _BEARER_TOKEN_KEYRING.
+  # bearer_token: ""                            # inline (escape hatch)
+  # bearer_token_env: "SEREN_MARGIN_TOKEN"      # NAME of an env var holding it
+  # bearer_token_keyring: "seren-margin"        # OS keychain ref
+  #
+  # NOTE for the Workbench path: Workbench's remote-import fetches
+  # /mcp-manifest (public) but calls the note routes with no credentials
+  # today, so a token here means the standalone /mcp surface keeps working
+  # and the Workbench proxy does not, until Workbench learns to carry one.
+
   # allow_open_lan: false
-  #   Margin has NO bearer auth of its own, so a host beyond loopback REFUSES TO
-  #   START. If it must be reachable from other machines, put something that
-  #   authenticates in front of it (reverse proxy, SSH tunnel), then set this
-  #   true (or SEREN_MARGIN_ALLOW_OPEN_LAN=1). It will say so on every boot.
+  #   The written override for running open on a trusted LAN with no token.
+  #   Set true (or SEREN_MARGIN_ALLOW_OPEN_LAN=1) and it starts, and says so
+  #   on every boot.
 
   # Listen port.
   # Default: 7421

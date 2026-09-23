@@ -76,12 +76,24 @@ class MarginConfig(BaseModel):
     # exposed to a network without auth in front. Operator decides whether
     # to widen. (The whole family is loopback-by-default now; Margin was first.)
     host: str = "127.0.0.1"
-    # Margin has NO bearer auth, by design (the promise not to look is the
-    # contract, and the bind is the guard). So a host beyond loopback refuses
-    # to start unless the operator says this, in writing, and has put
-    # something that authenticates in front of it. See seren_meninges.exposure.
-    allow_open_lan: bool = False
     port: int = 7421
+
+    # A TOKEN IS AVAILABLE, NOT REQUIRED. The default is no token and a
+    # loopback bind: the bind is the guard, the promise not to look is the
+    # contract, and nothing here makes anyone configure a secret to keep a
+    # diary on their own box. But the moment an operator widens the host,
+    # the family's rule applies (seren_meninges.exposure): a bind beyond
+    # loopback with no token refuses to start. So the same three token
+    # pointers every sibling has are here too - inline, env var name, or a
+    # keyring ref - resolved through seren_meninges so it behaves identically
+    # to Memory and Loci. Set one and every route but `/`, `/health` and
+    # `/mcp-manifest` wants `Authorization: Bearer <token>`.
+    bearer_token: str = ""
+    bearer_token_env: str = ""
+    bearer_token_keyring: str = ""
+    # The written override for running open on a trusted LAN. It prints a
+    # banner every boot. See seren_meninges.exposure.
+    allow_open_lan: bool = False
     updates: UpdatesConfig = Field(default_factory=UpdatesConfig)
 
     # REMOVED: notes_days. It configured an auto-expiry sweep that was taken
@@ -94,6 +106,16 @@ class MarginConfig(BaseModel):
 
     def resolved_db_path(self) -> Path:
         return Path(self.db_path).expanduser()
+
+    def resolve_bearer(self) -> str:
+        """The token callers must present, or "" for open. Same resolver
+        every Seren service uses: inline > keyring > env var."""
+        from seren_meninges import resolve_token
+        return resolve_token(
+            inline=self.bearer_token or None,
+            keyring_ref=self.bearer_token_keyring or None,
+            env_var=self.bearer_token_env or None,
+        )
 
 
 # -- config file resolution --------------------------------------------------
@@ -159,7 +181,8 @@ def _apply_server_overrides(cfg: MarginConfig, server: dict[str, Any], *, source
     """
     # Whitelist of known keys to keep YAML from setting arbitrary attributes.
     # (If you add a field to MarginConfig, add it here too.)
-    known = {"db_path", "host", "port", "allow_open_lan"}
+    known = {"db_path", "host", "port", "allow_open_lan",
+             "bearer_token", "bearer_token_env", "bearer_token_keyring"}
     for key, raw in server.items():
         if key not in known:
             diag(f"[seren-margin] config: ignoring unknown server key '{key}' from {source}")
@@ -200,6 +223,9 @@ def load_config(path: Optional[str] = None) -> MarginConfig:
         "SEREN_MARGIN_HOST": "host",
         "SEREN_MARGIN_PORT": "port",
         "SEREN_MARGIN_ALLOW_OPEN_LAN": "allow_open_lan",
+        "SEREN_MARGIN_BEARER_TOKEN": "bearer_token",
+        "SEREN_MARGIN_BEARER_TOKEN_ENV": "bearer_token_env",
+        "SEREN_MARGIN_BEARER_TOKEN_KEYRING": "bearer_token_keyring",
     }
     env_overrides: dict[str, Any] = {}
     for env_key, attr in env_map.items():

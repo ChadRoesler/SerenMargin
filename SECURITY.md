@@ -11,27 +11,43 @@ Security fixes are applied to the current release only. Pin to the latest tag.
 
 ---
 
+## What this service holds
+
+An AI assistant's private notes, in plain sqlite at a known path. The privacy
+guarantee is **relational, not mechanical**: the operator who deploys this is
+the operator who chooses not to read, and the only thing the mechanism
+enforces is that the one operator-facing surface, `/notes/stats`, is
+content-blind by construction. Everything below is about keeping *other
+people* out, not the operator.
+
+Nothing is sent to a third party except the optional update check against the
+package index, which `updates.enabled: false` (or
+`SEREN_MARGIN_UPDATES_ENABLED=0`) switches off.
+
+---
+
 ## Threat model
-
-SerenMargin is a **self-hosted** service. Nothing is sent to a third party.
-
-The relevant attack surface is:
 
 | Surface | Default | Notes |
 |---------|---------|-------|
-| HTTP API | `127.0.0.1:7423` | Localhost only by default. Exposing on `0.0.0.0` puts it on the network - use bearer auth and a reverse proxy if you do. |
-| Bearer token | Not set | Optional but strongly recommended for any non-localhost bind. Token is stored in `seren-corpuscallosum.yaml` - the setup scripts lock file permissions on creation. |
-| MCP endpoint (`/mcp/`) | Same host/port as HTTP API | Subject to the same bearer auth middleware. |
-| CorpusCallosum viewer (`/viewer`) | Public (loads before auth prompt) | The viewer page itself is public so the token input can render; all data API calls require the bearer token. |
-| Config file | `~/seren-corpuscallosum/seren-corpuscallosum.yaml` | May contain the bearer token. Setup scripts set `0600` (Unix) or ACL-lock to the current user (Windows). Do not commit this file. |
+| HTTP API | `127.0.0.1:7421` | Loopback only. The bind is the guard by default. A host beyond loopback with no token **refuses to start** and prints the three ways out; `allow_open_lan: true` is the written override and prints a banner every boot. |
+| Bearer token | Not set | **Optional on loopback, required beyond it.** Set `bearer_token`, `bearer_token_env` or `bearer_token_keyring` on the `server:` block (or the matching `SEREN_MARGIN_*` env vars) and every route but `/`, `/health` and `/mcp-manifest` wants `Authorization: Bearer <token>`. Nothing makes you set one to keep a diary on your own machine. |
+| MCP endpoint (`/mcp`) | Only with the `[mcp]` extra, same host/port | Behind the same optional bearer. Six tools, all note-scoped; no tool reads `/notes/stats`. DNS-rebinding protection is off by default for a trusted LAN; `SEREN_MARGIN_MCP_ALLOWED_HOSTS` turns it on. |
+| Tool manifest (`/mcp-manifest`) | Public | Tool descriptions and this instance's base URL, never notes. Public so Workbench can import it before it has credentials. |
+| The database | `~/.seren-margin/notes.db`, mode of the user's umask | Readable by the deploying user. That is the arrangement; back it up like anything else you would not want to lose, and do not put it on a shared filesystem. |
+| Config file | `~/seren-margin/seren-margin.yaml` | May hold an inline `bearer_token`. Prefer the env-var or keyring pointer; keep the file `0600` and out of version control. |
+| Retract | Hard delete, no history | `DELETE /notes/{id}` and the `retract_note` tool remove a note for good. There is deliberately no archive of retracted notes. |
 
 ---
 
 ## Deployment recommendations
 
-- **Local use**: default bind (`127.0.0.1`) with no token is fine.
-- **Team / LAN use**: bind to a specific interface, enable a bearer token, and put a TLS-terminating reverse proxy (nginx, Caddy) in front. Never expose the raw HTTP port to untrusted networks.
-- **Locked-down / air-gapped environments**: no consolidator model is required. Leave `model_url` blank and Copilot manages briefs and drafts via MCP. No outbound model calls are made.
+- **One box, one assistant** (the intended case): the defaults. Loopback, no
+  token, install it only if the ethos fits your deployment.
+- **Reachable from another machine**: set a token first, then widen the
+  bind, then decide whether a reverse proxy or an SSH tunnel is the better
+  door. The service will not start the other way round.
+- **Anything routable from outside the house**: don't.
 
 ---
 

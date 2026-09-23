@@ -228,16 +228,32 @@ has its own reader. See
 | `SEREN_MARGIN_DB`       | `~/.seren-margin/notes.db` | Sqlite file path                   |
 | `SEREN_MARGIN_HOST`     | `127.0.0.1`                | Bind host (localhost-only default) |
 | `SEREN_MARGIN_PORT`     | `7421`                     | Listen port                        |
+| `SEREN_MARGIN_BEARER_TOKEN` / `_BEARER_TOKEN_ENV` / `_BEARER_TOKEN_KEYRING` | unset | Optional bearer; see below |
+| `SEREN_MARGIN_ALLOW_OPEN_LAN` | unset                | Run open beyond loopback, on purpose, with a banner |
 
 MCP-only knobs: `SEREN_MARGIN_MCP_MOUNT` (default `/mcp`),
 `SEREN_MARGIN_MCP_ALLOWED_HOSTS` / `_ALLOWED_ORIGINS` (DNS-rebinding allowlist,
 off by default).
 
-**On the bind address:** SerenMemory defaults to `0.0.0.0` for trusted-LAN
-cluster use. SerenMargin deliberately does **not** — these are private notes and
-they don't land on a network just because the rest of the constellation does.
-Mounting MCP doesn't change that either: the transport got wider, the listener
-did not. Widen it yourself, on purpose, and put auth in front of it when you do.
+**On the bind address, and the lock you can add.** SerenMargin binds
+`127.0.0.1`, and so does every Seren service now — Margin was first, because
+these are private notes and they don't land on a network just because the rest
+of the constellation does. Mounting MCP doesn't change that: the transport got
+wider, the listener did not.
+
+A bearer is **available, not required.** With no token (the default) every
+route is open and the bind is the whole guard — nobody has to configure a
+secret to keep a diary on their own machine. Set one of the three pointers on
+the `server:` block (`bearer_token`, `bearer_token_env`, `bearer_token_keyring`,
+the same three every sibling has) and the family's middleware turns on: `/`,
+`/health` and `/mcp-manifest` stay public, everything that touches a note wants
+`Authorization: Bearer <token>`. Beyond loopback the family's rule applies: a
+bind with no token refuses to start and prints the three ways out;
+`allow_open_lan: true` is the written override, and it says so on every boot.
+
+One honest caveat: Workbench's remote-import path calls the note routes with no
+credentials today, so a token here keeps the standalone `/mcp` surface working
+and pauses the Workbench proxy until Workbench learns to carry one.
 
 ## The engine-check surface
 

@@ -18,7 +18,7 @@ WHY THIS EXISTS SEPARATELY FROM /mcp-manifest:
     seren-margin[mcp]`, point a client at /mcp, done. Same reason SerenMemory
     and SerenLoci each grew one.
 
-    Both surfaces expose the same four tools. They're defined ONCE, in tools.py;
+    Both surfaces expose the same six tools. They're defined ONCE, in tools.py;
     the manifest is written to match and both are asserted against each other in
     tests/test_manifest_parity.py, because the previous manifest drifted from the
     routes and shipped a tool that 404'd for who knows how long.
