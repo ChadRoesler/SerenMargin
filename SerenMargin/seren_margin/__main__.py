@@ -10,6 +10,7 @@ import argparse
 import sys
 
 import uvicorn
+from seren_meninges.exposure import enforce_exposure
 
 from ._diag import diag
 from .app import create_app
@@ -48,9 +49,13 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    # FIRST: the diary on the LAN with nothing in front of it is the one
+    # configuration this service must never boot into quietly. Margin has no
+    # token to offer, so the message says so and names the override.
+    enforce_exposure(cfg.host, cfg.port, service="seren-margin",
+                     allow_open_lan=cfg.allow_open_lan, env_prefix="SEREN_MARGIN",
+                     supports_token=False, log=diag)
     app = create_app(cfg)
-
-    diag(f"[seren-margin] listening on {cfg.host}:{cfg.port}")
     uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="info")
 
 
