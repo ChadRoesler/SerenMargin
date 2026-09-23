@@ -18,7 +18,7 @@ newer first and fall back, so this works across a range of installed versions.
 
 A NOTE ON THE BIND ADDRESS, because it matters more here than in the siblings:
 mounting MCP does NOT widen the listener. SerenMargin still defaults to
-127.0.0.1 while Memory defaults to 0.0.0.0 - these are private notes and they
+127.0.0.1, as the whole family does now - these are private notes and they
 don't go on the network just because the transport now could. If you widen the
 host on purpose, put auth in front of it on purpose too.
 """
