@@ -251,9 +251,9 @@ the same three every sibling has) and the family's middleware turns on: `/`,
 bind with no token refuses to start and prints the three ways out;
 `allow_open_lan: true` is the written override, and it says so on every boot.
 
-One honest caveat: Workbench's remote-import path calls the note routes with no
-credentials today, so a token here keeps the standalone `/mcp` surface working
-and pauses the Workbench proxy until Workbench learns to carry one.
+Through the Workbench, the token is named on the Workbench side, on the stub
+that imports this manifest (`bearer_token_env: SEREN_MARGIN_TOKEN` next to the
+`from:` line); every imported tool then presents it, resolved per call.
 
 ## The engine-check surface
 
