@@ -23,8 +23,9 @@ Lenient parse (Postel-as-kindness applied to config):
     - Malformed YAML            -> log + fall back to defaults (no crash)
     - Unparseable single value  -> log + that key falls back; others still apply
 
-Note on the host default: unlike SerenMemory (which defaults host to 0.0.0.0
-for trusted-LAN cluster use), SerenMargin defaults to 127.0.0.1. These are
+Note on the host default: SerenMargin defaults to 127.0.0.1, and since
+seren-meninges 2.3.0 so does every sibling (Observatory, the per-node plane,
+is the one that opts into the LAN). Margin got there first because these are
 PRIVATE notes - they must not land on the network just because the rest of
 the constellation does. Follow-the-leader on structure; NOT on the security
 default. Widen it yourself, on purpose, if you mean to.
@@ -73,7 +74,7 @@ class MarginConfig(BaseModel):
 
     # Bind address. Default localhost-only because this service shouldn't be
     # exposed to a network without auth in front. Operator decides whether
-    # to widen. (Memory defaults 0.0.0.0; Margin does NOT - private notes.)
+    # to widen. (The whole family is loopback-by-default now; Margin was first.)
     host: str = "127.0.0.1"
     port: int = 7421
     updates: UpdatesConfig = Field(default_factory=UpdatesConfig)
