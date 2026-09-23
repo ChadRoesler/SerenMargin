@@ -39,10 +39,11 @@ server:
   # bearer_token_env: "SEREN_MARGIN_TOKEN"      # NAME of an env var holding it
   # bearer_token_keyring: "seren-margin"        # OS keychain ref
   #
-  # NOTE for the Workbench path: Workbench's remote-import fetches
-  # /mcp-manifest (public) but calls the note routes with no credentials
-  # today, so a token here means the standalone /mcp surface keeps working
-  # and the Workbench proxy does not, until Workbench learns to carry one.
+  # NOTE for the Workbench path: /mcp-manifest stays public so Workbench
+  # can import it, and the token the imported tools present is named on
+  # the Workbench side, on the stub that points here:
+  #   - from: http://127.0.0.1:7421/mcp-manifest
+  #     bearer_token_env: SEREN_MARGIN_TOKEN
 
   # allow_open_lan: false
   #   The written override for running open on a trusted LAN with no token.
