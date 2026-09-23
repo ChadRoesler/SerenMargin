@@ -28,7 +28,15 @@ TWO WAYS TO REACH THE TOOLS, both first-class:
     2. Standalone path - `pip install seren-margin[mcp]` mounts a real MCP
        endpoint at /mcp on this same process, so a client can connect directly
        with nothing else deployed.
-Same four tools either way, defined once in seren_margin.mcp.tools.
+Same six tools either way, defined once in seren_margin.mcp.tools.
+
+AUTH, IF YOU WANT IT. With no token configured (the default) every route is
+open and the loopback bind is the whole guard - the way it has always been.
+Configure one of the three token pointers on the server block and the
+family's bearer middleware turns on: `/`, `/health` and `/mcp-manifest` stay
+public (liveness, and the tool manifest Workbench fetches before it has any
+credentials), everything that touches a note wants the bearer. Nothing here
+makes anyone set one to keep a diary on their own machine.
 """
 from __future__ import annotations
 
@@ -38,6 +46,7 @@ from typing import Optional
 from fastapi import FastAPI, Body, HTTPException, Request
 from fastapi.responses import Response
 from seren_meninges import get_version
+from seren_meninges.auth import DEFAULT_PUBLIC_PATHS, bearer_auth_middleware
 from seren_meninges.updates import updates_payload
 
 from importlib.resources import files
@@ -123,6 +132,16 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         version=APP_VERSION,
         lifespan=lifespan,
     )
+
+    # Optional bearer. An empty resolved token makes this middleware a
+    # pass-through (see seren_meninges.auth), so an install with no token
+    # behaves exactly as before. /mcp-manifest is public on purpose: it holds
+    # tool descriptions, never notes, and Workbench fetches it before it has
+    # any way to authenticate.
+    app.add_middleware(bearer_auth_middleware(
+        cfg.resolve_bearer(),
+        public_paths=DEFAULT_PUBLIC_PATHS | {"/mcp-manifest"},
+    ))
 
     @app.get("/")
     async def root(request: Request):

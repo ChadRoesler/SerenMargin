@@ -83,7 +83,11 @@ tools:
           description: "The note body. Whatever you want to keep." }
       - { name: topic,   type: string, required: false, default: "",
           description: "Light thread-label grouping related notes. Searchable." }
-      - { name: kind,    type: string, required: false, default: observation,
+      # Default is EMPTY, matching the standalone tool (kind=None): a note the
+      # writer did not categorise buckets as `_unkinded` in /notes/stats. The
+      # old default of `observation` made every Workbench-path note look
+      # categorised when nobody had chosen anything.
+      - { name: kind,    type: string, required: false, default: "",
           description: "Free-form category, e.g. observation | reminder |
                         question | idea | feeling. Use it or don't." }
 
@@ -160,14 +164,11 @@ tools:
     invoke:
       kind: web
       method: GET
-      # UNVERIFIED AGAINST SerenMcpServer's ManifestLoader: this is the only
-      # tool in the family that needs a QUERY-STRING parameter rather than a
-      # path segment or a JSON body, and the loader's substitution rules for
-      # that case weren't readable from here. If remote-import serves this
-      # tool with a literal "{query}" in the URL, that's the bug - teach the
-      # loader query params, or add a path-style alias route.
-      # The standalone /mcp surface is unaffected either way (it calls the
-      # store directly and never touches this file).
+      # Query-string parameter, the only one in the family. VERIFIED against
+      # Workbench's web dispatcher (web_dispatcher.py + param_subst.py):
+      # placeholders are substituted with the VALUE percent-encoded, so
+      # `?q={query}` and `?topic={topic}` above both work. The standalone
+      # /mcp surface never touches this file - it calls the store directly.
       path: /notes/search?q={query}
     parameters:
       - { name: query, type: string, required: true,

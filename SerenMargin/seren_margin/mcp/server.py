@@ -20,7 +20,9 @@ A NOTE ON THE BIND ADDRESS, because it matters more here than in the siblings:
 mounting MCP does NOT widen the listener. SerenMargin still defaults to
 127.0.0.1, as the whole family does now - these are private notes and they
 don't go on the network just because the transport now could. If you widen the
-host on purpose, put auth in front of it on purpose too.
+host on purpose, set a bearer on the server block (or put something that
+authenticates in front) - beyond loopback with no token, the service refuses
+to start.
 """
 from __future__ import annotations
 

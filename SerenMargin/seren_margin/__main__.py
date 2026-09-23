@@ -50,11 +50,12 @@ def main() -> None:
 
     cfg = load_config(args.config)
     # FIRST: the diary on the LAN with nothing in front of it is the one
-    # configuration this service must never boot into quietly. Margin has no
-    # token to offer, so the message says so and names the override.
+    # configuration this service must never boot into quietly. A token is
+    # optional on loopback and required beyond it, unless the operator says
+    # allow_open_lan in writing.
     enforce_exposure(cfg.host, cfg.port, service="seren-margin",
-                     allow_open_lan=cfg.allow_open_lan, env_prefix="SEREN_MARGIN",
-                     supports_token=False, log=diag)
+                     token=cfg.resolve_bearer(), allow_open_lan=cfg.allow_open_lan,
+                     env_prefix="SEREN_MARGIN", log=diag)
     app = create_app(cfg)
     uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="info")
 
