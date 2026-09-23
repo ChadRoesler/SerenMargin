@@ -24,7 +24,7 @@ dependencies = [
     # The standalone promise is intact as written - it always meant "no other
     # SERVICES required" (no Workbench, no cluster head), not "no shared
     # library". Margin still runs alone on localhost with nothing else deployed.
-    "seren-meninges>=2.2.0,<3",
+    "seren-meninges>=2.4.0,<3",
 ]
 
 [project.optional-dependencies]

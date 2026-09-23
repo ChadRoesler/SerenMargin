@@ -21,14 +21,19 @@ server:
   # db_path: ~/.seren-margin/notes.db
 
   # Bind address. Localhost-only by default because private notes shouldn't be
-  # on a network without auth in front. (SerenMemory defaults to 0.0.0.0 for
-  # the cluster; Margin deliberately does NOT.)
+  # on a network without auth in front. (Every Seren service is loopback by
+  # default now; Margin got there first.)
   #
   # Installing the [mcp] extra does not change this. Mounting an MCP endpoint
   # widens the TRANSPORT, not the LISTENER - /mcp is reachable exactly as far
   # as this host setting says it is. Widen at your own risk, on purpose.
   # Default: 127.0.0.1
   # host: 127.0.0.1
+  # allow_open_lan: false
+  #   Margin has NO bearer auth of its own, so a host beyond loopback REFUSES TO
+  #   START. If it must be reachable from other machines, put something that
+  #   authenticates in front of it (reverse proxy, SSH tunnel), then set this
+  #   true (or SEREN_MARGIN_ALLOW_OPEN_LAN=1). It will say so on every boot.
 
   # Listen port.
   # Default: 7421

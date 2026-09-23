@@ -76,6 +76,11 @@ class MarginConfig(BaseModel):
     # exposed to a network without auth in front. Operator decides whether
     # to widen. (The whole family is loopback-by-default now; Margin was first.)
     host: str = "127.0.0.1"
+    # Margin has NO bearer auth, by design (the promise not to look is the
+    # contract, and the bind is the guard). So a host beyond loopback refuses
+    # to start unless the operator says this, in writing, and has put
+    # something that authenticates in front of it. See seren_meninges.exposure.
+    allow_open_lan: bool = False
     port: int = 7421
     updates: UpdatesConfig = Field(default_factory=UpdatesConfig)
 
@@ -154,7 +159,7 @@ def _apply_server_overrides(cfg: MarginConfig, server: dict[str, Any], *, source
     """
     # Whitelist of known keys to keep YAML from setting arbitrary attributes.
     # (If you add a field to MarginConfig, add it here too.)
-    known = {"db_path", "host", "port"}
+    known = {"db_path", "host", "port", "allow_open_lan"}
     for key, raw in server.items():
         if key not in known:
             diag(f"[seren-margin] config: ignoring unknown server key '{key}' from {source}")
@@ -194,6 +199,7 @@ def load_config(path: Optional[str] = None) -> MarginConfig:
         "SEREN_MARGIN_DB": "db_path",
         "SEREN_MARGIN_HOST": "host",
         "SEREN_MARGIN_PORT": "port",
+        "SEREN_MARGIN_ALLOW_OPEN_LAN": "allow_open_lan",
     }
     env_overrides: dict[str, Any] = {}
     for env_key, attr in env_map.items():
