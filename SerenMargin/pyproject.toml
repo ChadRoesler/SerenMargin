@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "seren-margin"
 dynamic = ["version"]
 description = "Private notes-to-self for an AI assistant. Standalone, opt-in, opinionated."
-license = "GPL-3.0-only"
+license = "AGPL-3.0-or-later"
 requires-python = ">=3.10"
 authors = [{ name = "Chad Roesler" }]
 readme = "README.md"
