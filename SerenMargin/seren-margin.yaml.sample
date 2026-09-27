@@ -45,6 +45,14 @@ server:
   #   - from: http://127.0.0.1:7421/mcp-manifest
   #     bearer_token_env: SEREN_MARGIN_TOKEN
 
+  # http_reads: false
+  #   Whether the HTTP API serves note CONTENT (GET /notes, /notes/search,
+  #   /notes/topics, /notes/{id}, and the note echoed back by amend). Off by
+  #   default: the writer reads through /mcp, and a browser pointed at this
+  #   port gets the content-blind /notes/stats and nothing to read. Turn it on
+  #   only for the Workbench path (its manifest proxies the read tools to
+  #   these routes), and set a bearer when you do.
+
   # allow_open_lan: false
   #   The written override for running open on a trusted LAN with no token.
   #   Set true (or SEREN_MARGIN_ALLOW_OPEN_LAN=1) and it starts, and says so

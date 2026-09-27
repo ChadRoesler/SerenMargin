@@ -148,6 +148,9 @@ curl -X POST http://localhost:7421/notes \
   -H 'content-type: application/json' \
   -d '{"content":"ask about the supersede gap next chance","topic":"serenmemory"}'
 
+# The read routes below answer 404 unless the server block sets
+# http_reads: true - see "Nobody reads the diary over HTTP" below.
+
 # Read the board, newest first — ?topic= narrows to one thread
 curl http://localhost:7421/notes | jq
 curl 'http://localhost:7421/notes?topic=serenmemory' | jq
@@ -254,6 +257,19 @@ bind with no token refuses to start and prints the three ways out;
 Through the Workbench, the token is named on the Workbench side, on the stub
 that imports this manifest (`bearer_token_env: SEREN_MARGIN_TOKEN` next to the
 `from:` line); every imported tool then presents it, resolved per call.
+
+## Nobody reads the diary over HTTP
+
+By default the HTTP API does not serve note **content**: `GET /notes`,
+`/notes/search`, `/notes/topics` and `/notes/{id}` answer 404, and amend answers
+with the id, not the note. Writing, retracting and the content-blind stats work
+as always. The writer reads through `/mcp`, whose tools go to the store in
+process. A person who points a browser at the port, the operator included, gets
+nothing to read.
+
+`server.http_reads: true` reopens the routes for the Workbench path, whose
+manifest proxies the read tools to them. Set a bearer when you do.
+
 
 ## The engine-check surface
 

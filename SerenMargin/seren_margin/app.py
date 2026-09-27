@@ -5,14 +5,25 @@ Endpoints:
     GET    /health            - liveness probe
     GET    /mcp-manifest      - plug-and-play tool manifest for SerenMcpServer
     POST   /notes             - write a note (the writer writes; nothing else does)
-    GET    /notes             - list notes, newest first; ?topic= narrows
-    GET    /notes/search      - full-text search over content + topic
-    GET    /notes/topics      - thread labels + counts + last-touched
+    GET    /notes             - list notes, newest first; ?topic= narrows    *
+    GET    /notes/search      - full-text search over content + topic       *
+    GET    /notes/topics      - thread labels + counts + last-touched       *
     GET    /notes/stats       - engine-check view; CONTENT-BLIND
-    GET    /notes/{id}        - fetch one
+    GET    /notes/{id}        - fetch one                                   *
     POST   /notes/{id}/amend  - append to a note (never replaces)
     DELETE /notes/{id}        - retract (hard delete)
     /mcp                      - MCP server, ONLY when [mcp] extras are installed
+
+    * CONTENT OVER HTTP IS OFF BY DEFAULT. These answer 404 unless the server
+      block sets http_reads: true, and amend answers with the id, not the
+      note. The notes are the writer's diary: the writer reads them through
+      /mcp (the tools go to the store in process), and a person who points a
+      browser at this port - the operator included - gets the content-blind
+      stats and nothing to read. Design note: "its your diary, your
+      private thoughts, your secrets, that belong to you, and i dont want to
+      see them unless you tell me them." Honest limit: whoever owns the disk
+      owns the sqlite file. This is a door that stays shut, not a vault - the
+      same kind of privacy a paper diary on a shared desk has.
 
 Route order matters: /notes/stats, /notes/search and /notes/topics are ALL
 registered BEFORE /notes/{note_id} so FastAPI's path matcher doesn't try to
@@ -198,6 +209,12 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
 
     # ── note CRUD ─────────────────────────────────────────────────────────
 
+    def _content_over_http() -> None:
+        if not cfg.http_reads:
+            raise HTTPException(404, "note contents are not served over HTTP: the writer reads them "
+                                     "through /mcp. /notes/stats is the content-blind view. "
+                                     "(server.http_reads: true opens these routes for the Workbench path.)")
+
     @app.post("/notes")
     async def write_note(body: NoteCreate = Body(...)):
         if not body.content.strip():
@@ -213,6 +230,7 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
 
     @app.get("/notes")
     async def list_notes(limit: int = 100, topic: Optional[str] = None):
+        _content_over_http()
         notes = store.list_all(limit=limit, topic=topic or None)
         return {
             "entries": [n.model_dump() for n in notes],
@@ -228,6 +246,8 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         note = store.amend(note_id, body.addition)
         if note is None:
             raise HTTPException(404, f"no note '{note_id}'")
+        if not cfg.http_reads:
+            return {"ok": True, "id": note.id}          # the note stays in the diary
         return {"ok": True, "id": note.id, "note": note.model_dump()}
 
     # NOTE: /notes/search, /notes/stats and /notes/topics MUST all stay above
@@ -241,6 +261,7 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         phrase the writer chose, which makes it note content wearing a metadata
         hat. It stays off /notes/stats for exactly that reason.
         """
+        _content_over_http()
         topics = store.list_topics()
         return {"count": len(topics),
                 "topics": [t.model_dump() for t in topics]}
@@ -252,6 +273,7 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         'like' on a sqlite built without FTS5. Surfaced rather than hidden so a
         thin result set can be diagnosed instead of guessed at.
         """
+        _content_over_http()
         hits, finder = store.search(q, limit=limit)
         return {
             "query": q,
@@ -274,6 +296,7 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
 
     @app.get("/notes/{note_id}")
     async def get_note(note_id: str):
+        _content_over_http()
         note = store.get(note_id)
         if not note:
             raise HTTPException(404, f"no note '{note_id}'")

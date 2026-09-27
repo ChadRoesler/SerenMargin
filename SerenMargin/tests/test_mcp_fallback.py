@@ -21,7 +21,7 @@ from seren_margin.config import MarginConfig
 
 @pytest.fixture
 def cfg(tmp_path):
-    return MarginConfig(db_path=str(tmp_path / "notes.db"))
+    return MarginConfig(db_path=str(tmp_path / "notes.db"), http_reads=True)  # these tests exercise the HTTP read routes (off by default)
 
 
 def _break_mount(monkeypatch, exc: Exception):

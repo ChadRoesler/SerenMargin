@@ -17,7 +17,7 @@ from seren_margin.config import MarginConfig
 
 @pytest.fixture
 def client(tmp_path):
-    cfg = MarginConfig(db_path=str(tmp_path / "test.db"))
+    cfg = MarginConfig(db_path=str(tmp_path / "test.db"), http_reads=True)  # these tests exercise the HTTP read routes (off by default)
     app = create_app(cfg)
     with TestClient(app) as c:
         yield c
