@@ -309,4 +309,4 @@ manifest is data, so nothing failed to compile and nobody found out.
 
 ## License
 
-GPL-3.0-only. Same as the rest of the Seren stack.
+AGPL-3.0-or-later. Same as the rest of the Seren stack.
