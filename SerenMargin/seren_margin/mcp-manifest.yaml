@@ -27,6 +27,12 @@
 #                   operator config)
 #    __VERSION__    SerenMargin's installed package version
 #
+#  THE READ TOOLS NEED server.http_reads: true. list_my_notes,
+#  list_my_topics and search_my_notes call GET routes that are OFF by
+#  default - note contents are not served over HTTP unless the operator
+#  opens them (see app.py). The /mcp surface reads the store in process
+#  and needs nothing. On this path, open the reads AND set a bearer.
+#
 #  Deliberately NOT exposed: GET /notes/stats. That's the operator's
 #  engine-check surface (content-blind by construction); the note-writer
 #  has no use for a blurred count of notes it can simply read.

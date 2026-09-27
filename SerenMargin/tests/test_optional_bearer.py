@@ -18,7 +18,7 @@ from seren_margin.models import bucket_kind
 
 
 def _client(tmp_path, **server):
-    cfg = MarginConfig(db_path=str(tmp_path / "notes.db"), **server)
+    cfg = MarginConfig(db_path=str(tmp_path / "notes.db"), **server, http_reads=True)  # these tests exercise the HTTP read routes (off by default)
     return TestClient(create_app(cfg))
 
 

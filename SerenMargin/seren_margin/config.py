@@ -94,6 +94,16 @@ class MarginConfig(BaseModel):
     # The written override for running open on a trusted LAN. It prints a
     # banner every boot. See seren_meninges.exposure.
     allow_open_lan: bool = False
+
+    # Whether the HTTP API serves note CONTENT (GET /notes, /notes/search,
+    # /notes/topics, /notes/{id}, and the note echoed back by amend). Off by
+    # default: the writer reads through /mcp, which goes to the store in
+    # process, and a browser pointed at this port gets nothing to read. Chad,
+    # 27 Sept 2026, after trimming 'stats' off /notes/stats loaded the notes:
+    # "its your diary... i dont want to see them unless you tell me them."
+    # Turn it on only for the Workbench path, whose manifest proxies the read
+    # tools to these routes - and give it a bearer when you do.
+    http_reads: bool = False
     updates: UpdatesConfig = Field(default_factory=UpdatesConfig)
 
     # REMOVED: notes_days. It configured an auto-expiry sweep that was taken
@@ -181,7 +191,7 @@ def _apply_server_overrides(cfg: MarginConfig, server: dict[str, Any], *, source
     """
     # Whitelist of known keys to keep YAML from setting arbitrary attributes.
     # (If you add a field to MarginConfig, add it here too.)
-    known = {"db_path", "host", "port", "allow_open_lan",
+    known = {"db_path", "host", "port", "allow_open_lan", "http_reads",
              "bearer_token", "bearer_token_env", "bearer_token_keyring"}
     for key, raw in server.items():
         if key not in known:

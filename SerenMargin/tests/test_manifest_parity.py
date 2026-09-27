@@ -35,7 +35,7 @@ def manifest() -> dict:
 
 @pytest.fixture
 def client(tmp_path):
-    cfg = MarginConfig(db_path=str(tmp_path / "notes.db"))
+    cfg = MarginConfig(db_path=str(tmp_path / "notes.db"), http_reads=True)  # these tests exercise the HTTP read routes (off by default)
     with TestClient(create_app(cfg)) as c:
         yield c
 
