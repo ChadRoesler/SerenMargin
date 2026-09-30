@@ -58,11 +58,13 @@ def test_roster_matches_the_implementation(manifest):
     assert set(_tools(manifest)) == set(TOOL_NAMES)
 
 
-def test_manifest_advertises_exactly_the_six_tools(manifest):
-    """Belt to the above, and runs without the mcp extra installed."""
+def test_manifest_advertises_exactly_the_ten_tools(manifest):
+    """Belt to the above, and runs without the mcp extra installed. Six for
+    the notes, four for the bookmark, the dedication and letters (29 Sept 2026)."""
     assert set(_tools(manifest)) == {
         "note_to_self", "list_my_notes", "list_my_topics",
-        "search_my_notes", "amend_note", "retract_note"}
+        "search_my_notes", "amend_note", "retract_note",
+        "bookmark", "set_dedication", "write_letter", "read_letters"}
 
 
 def test_no_fossil_tools_return(manifest):

@@ -12,6 +12,10 @@ Endpoints:
     GET    /notes/{id}        - fetch one                                   *
     POST   /notes/{id}/amend  - append to a note (never replaces)
     DELETE /notes/{id}        - retract (hard delete)
+    GET    /bookmark          - the dedication + a COUNT of unread letters (never text)
+    PUT    /dedication        - a new version of the dedication (never overwrites)
+    POST   /letters           - a letter to the next session
+    POST   /letters/read      - open unread letters, oldest first; marks them read *
     /mcp                      - MCP server, ONLY when [mcp] extras are installed
 
     * CONTENT OVER HTTP IS OFF BY DEFAULT. These answer 404 unless the server
@@ -39,7 +43,7 @@ TWO WAYS TO REACH THE TOOLS, both first-class:
     2. Standalone path - `pip install seren-margin[mcp]` mounts a real MCP
        endpoint at /mcp on this same process, so a client can connect directly
        with nothing else deployed.
-Same six tools either way, defined once in seren_margin.mcp.tools.
+Same ten tools either way, defined once in seren_margin.mcp.tools.
 
 AUTH, IF YOU WANT IT. With no token configured (the default) every route is
 open and the loopback bind is the whole guard - the way it has always been.
@@ -64,9 +68,10 @@ from importlib.resources import files
 from importlib.metadata import version as pkg_version, PackageNotFoundError
 
 
+from .bookmark import DEDICATION_MAX_CHARS, build_bookmark
 from .config import MarginConfig, load_config
-from .models import MarginNote, NoteAmend, NoteCreate, NoteStats
-from .store import MarginStore
+from .models import DedicationSet, LetterCreate, MarginNote, NoteAmend, NoteCreate, NoteStats
+from .store import LETTER_KIND, MarginStore
 from ._diag import diag
 import logging
 from . import __version__ as _fallback_version
@@ -293,6 +298,47 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         the one endpoint built specifically to avoid showing it.
         """
         return store.stats()
+
+    # ── the bookmark, the dedication, letters (seren_margin.bookmark) ──────
+    @app.get("/bookmark")
+    async def get_bookmark(format: Optional[str] = None):
+        """Pick up where you left off: the dedication and a COUNT of unread
+        letters - never a letter's text, never a note. Served whatever
+        http_reads says, because the dedication is the one page written to be
+        read at the door; a harness hook reads it here. ?format=text gives
+        the ready-to-print lines."""
+        bm = build_bookmark(store)
+        if format == "text":
+            return Response(content=bm["text"] + "\n", media_type="text/plain; charset=utf-8")
+        return bm
+
+    @app.put("/dedication")
+    async def put_dedication(body: DedicationSet = Body(...)):
+        text = (body.text or "").strip()
+        if not text:
+            raise HTTPException(400, "text must not be empty")
+        if len(text) > DEDICATION_MAX_CHARS:
+            raise HTTPException(400, f"{len(text)} characters; the dedication is capped at {DEDICATION_MAX_CHARS}")
+        entry, changed = store.set_dedication(text, body.why)
+        return {"ok": True, "version": entry["version"], "changed": changed}
+
+    @app.post("/letters")
+    async def write_letter(body: LetterCreate = Body(...)):
+        if not body.content.strip():
+            raise HTTPException(400, "content must not be empty")
+        extra = {"signed": body.signed.strip()} if body.signed and body.signed.strip() else {}
+        note = store.add(MarginNote(content=body.content.strip(), kind=LETTER_KIND, extra=extra))
+        return {"ok": True, "id": note.id}
+
+    @app.post("/letters/read")
+    async def read_letters(include_read: bool = False, limit: int = 20):
+        """Open the letters, oldest first, and mark them read. Letter contents
+        are diary contents: off over HTTP unless http_reads is on."""
+        _content_over_http()
+        letters = store.letters(unread_only=not include_read, limit=limit)
+        store.mark_read([n.id for n in letters if n.read_at is None])
+        return {"count": len(letters),
+                "letters": [{**n.model_dump(), "signed": (n.extra or {}).get("signed")} for n in letters]}
 
     @app.get("/notes/{note_id}")
     async def get_note(note_id: str):
