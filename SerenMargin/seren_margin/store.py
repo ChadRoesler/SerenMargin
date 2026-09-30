@@ -58,7 +58,17 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 CREATE INDEX IF NOT EXISTS idx_notes_ts ON notes(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_notes_topic ON notes(topic);
+-- The dedication (seren_margin.bookmark): one page, every version kept.
+CREATE TABLE IF NOT EXISTS dedication (
+    version     INTEGER PRIMARY KEY,
+    text        TEXT NOT NULL,
+    set_at      REAL NOT NULL,
+    why         TEXT
+);
 """
+
+# Letters are notes with this kind and a read mark (seren_margin.bookmark).
+LETTER_KIND = "letter"
 
 # Columns added after v0.1.0 shipped. Applied by _migrate() as idempotent
 # ALTER TABLE ADD COLUMNs.
@@ -71,6 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_notes_topic ON notes(topic);
 # owner, by design, isn't reading it closely enough to notice damage.
 _ADDED_COLUMNS: dict[str, str] = {
     "amended_at": "REAL",
+    "read_at": "REAL",          # letters: NULL until read_letters opens it
 }
 
 # Standalone FTS5 index rather than an external-content table.
@@ -215,11 +226,11 @@ class MarginStore:
         with self._conn() as conn:
             conn.execute(
                 """INSERT INTO notes
-                       (id, content, topic, kind, ts, amended_at, extra)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                       (id, content, topic, kind, ts, amended_at, read_at, extra)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     note.id, note.content, note.topic, note.kind, note.ts,
-                    note.amended_at, json.dumps(note.extra or {}),
+                    note.amended_at, note.read_at, json.dumps(note.extra or {}),
                 ),
             )
             if self.has_fts:
@@ -401,6 +412,61 @@ class MarginStore:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_note(r) for r in rows]
 
+    # ── letters and the dedication (seren_margin.bookmark) ────────────────
+    def letters(self, unread_only: bool = True, limit: int = 20) -> list[MarginNote]:
+        """Letters, OLDEST first - read in the order they were written."""
+        sql = "SELECT * FROM notes WHERE LOWER(TRIM(COALESCE(kind,''))) = ?"
+        if unread_only:
+            sql += " AND read_at IS NULL"
+        sql += " ORDER BY ts ASC LIMIT ?"
+        with self._conn() as conn:
+            rows = conn.execute(sql, (LETTER_KIND, limit)).fetchall()
+        return [_row_to_note(r) for r in rows]
+
+    def mark_read(self, ids: list[str]) -> None:
+        if not ids:
+            return
+        stamp = time.time()
+        with self._conn() as conn:
+            conn.executemany("UPDATE notes SET read_at = ? WHERE id = ? AND read_at IS NULL",
+                             [(stamp, i) for i in ids])
+            conn.commit()
+
+    def unread_letters(self) -> tuple[int, Optional[float]]:
+        """(how many, when the oldest was written) - the bookmark's count. No text."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS c, MIN(ts) AS oldest FROM notes "
+                "WHERE LOWER(TRIM(COALESCE(kind,''))) = ? AND read_at IS NULL",
+                (LETTER_KIND,)).fetchone()
+        return int(row["c"]), row["oldest"]
+
+    def dedication(self) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM dedication ORDER BY version DESC LIMIT 1").fetchone()
+        return dict(row) if row else None
+
+    def dedication_history(self, limit: int = 10) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute("SELECT * FROM dedication ORDER BY version DESC LIMIT ?",
+                                (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def set_dedication(self, text: str, why: Optional[str] = None) -> tuple[dict, bool]:
+        """A new version, never an overwrite. The same text as now is not a new
+        version. Returns (the version, whether it changed)."""
+        with self._conn() as conn:
+            cur = conn.execute("SELECT * FROM dedication ORDER BY version DESC LIMIT 1").fetchone()
+            if cur is not None and cur["text"] == text:
+                return dict(cur), False
+            version = (cur["version"] + 1) if cur is not None else 1
+            entry = {"version": version, "text": text, "set_at": time.time(),
+                     "why": (why or "").strip()[:500] or None}
+            conn.execute("INSERT INTO dedication (version, text, set_at, why) VALUES (?, ?, ?, ?)",
+                         (entry["version"], entry["text"], entry["set_at"], entry["why"]))
+            conn.commit()
+        return entry, True
+
     # ── stats (content-blind) ─────────────────────────────────────────────
     def stats(self) -> NoteStats:
         """Engine-check shape. No note text appears in this response.
@@ -434,5 +500,6 @@ def _row_to_note(row: sqlite3.Row) -> MarginNote:
         kind=row["kind"],
         ts=row["ts"],
         amended_at=row["amended_at"],
+        read_at=row["read_at"],
         extra=json.loads(row["extra"] or "{}"),
     )

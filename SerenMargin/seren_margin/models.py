@@ -103,6 +103,7 @@ KNOWN_KINDS: frozenset[str] = frozenset({
     "idea",
     "feeling",
     "note",
+    "letter",       # addressed to the next session (seren_margin.bookmark)
 })
 
 _UNKINDED = "_unkinded"
@@ -170,6 +171,8 @@ class MarginNote(BaseModel):
     ts: float = Field(default_factory=_now)
     amended_at: Optional[float] = Field(
         None, description="Last amendment time; None if never amended.")
+    read_at: Optional[float] = Field(
+        None, description="Letters only: when read_letters opened it; None while unread.")
 
     id: str = Field(default_factory=_new_id)
     extra: dict[str, Any] = Field(default_factory=dict)
@@ -195,6 +198,18 @@ class NoteCreate(BaseModel):
     topic: Optional[str] = None
     kind: Optional[str] = None
     extra: dict[str, Any] = Field(default_factory=dict)
+
+
+class LetterCreate(BaseModel):
+    """Input shape for POST /letters: a note to the next session."""
+    content: str
+    signed: Optional[str] = None
+
+
+class DedicationSet(BaseModel):
+    """Input shape for PUT /dedication: the whole page, and why it changed."""
+    text: str
+    why: Optional[str] = None
 
 
 class NoteAmend(BaseModel):

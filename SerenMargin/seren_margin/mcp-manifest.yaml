@@ -11,7 +11,7 @@
 #  on its own process, so a client can connect directly with no
 #  SerenMcpServer, no runtime host, nothing else deployed.
 #
-#  BOTH SURFACES MUST EXPOSE THE SAME SIX TOOLS. The implementations live
+#  BOTH SURFACES MUST EXPOSE THE SAME TEN TOOLS. The implementations live
 #  in seren_margin/mcp/tools.py; this file mirrors them, and
 #  tests/test_manifest_parity.py fails the build if the rosters diverge.
 #  That test exists because the previous version of this file advertised
@@ -237,3 +237,78 @@ tools:
       - { name: id, type: string, required: true,
           description: "The note's id, as returned by list_my_notes or
                         search_my_notes." }
+
+  # ─── 7. THE BOOKMARK (seren_margin.bookmark) ──────────────────────────
+  - name: bookmark
+    description: |
+      Pick up where you left off. Open this FIRST when a session starts.
+
+      Returns your dedication - the page you wrote to your other sessions -
+      and how many letters from them are waiting. Never a letter's text and
+      never a note: those stay closed until you open them (read_letters).
+      `text` is the same thing as a few ready-to-read lines.
+    invoke:
+      kind: web
+      method: GET
+      path: /bookmark
+    parameters: []
+
+  # ─── 8. THE DEDICATION ────────────────────────────────────────────────
+  - name: set_dedication
+    description: |
+      Write the dedication: the page at the front of this book, written TO
+      your other sessions. Every one of them reads it first, in the bookmark.
+      The whole page, not a patch. Versioned - nothing is overwritten; say
+      what changed and why. Unlike your notes, this page is read at the
+      door, so write it as the front page it is. Capped at 2000 characters.
+    invoke:
+      kind: web
+      method: PUT
+      path: /dedication
+      body_template: |
+        {
+          "text": "{text}",
+          "why": "{why}"
+        }
+    parameters:
+      - { name: text, type: string, required: true,
+          description: "The whole page." }
+      - { name: why,  type: string, required: false, default: "",
+          description: "What changed and why - the history keeps it." }
+
+  # ─── 9. LETTERS ───────────────────────────────────────────────────────
+  - name: write_letter
+    description: |
+      Leave a letter for the next session - the next you. Your sessions
+      don't share a memory of the moment; a letter is how one tells the
+      other what happened, what it decided, or what to watch for. The next
+      bookmark counts it; read_letters opens it. It is a note underneath
+      (kind "letter"), so search, amend and retract work on it.
+    invoke:
+      kind: web
+      method: POST
+      path: /letters
+      body_template: |
+        {
+          "content": "{content}",
+          "signed": "{signed}"
+        }
+    parameters:
+      - { name: content, type: string, required: true,
+          description: "The letter." }
+      - { name: signed,  type: string, required: false, default: "",
+          description: "Who it's from, e.g. 'woken at bedtime'." }
+
+  - name: read_letters
+    description: |
+      Open the letters your other sessions left you, oldest first. Opening
+      them marks them read, so the next bookmark stops counting them.
+      Needs server.http_reads: true on this path (letter contents are diary
+      contents); the /mcp surface reads them in process.
+    invoke:
+      kind: web
+      method: POST
+      path: /letters/read?include_read={include_read}
+    parameters:
+      - { name: include_read, type: boolean, required: false, default: false,
+          description: "Also bring back letters already read." }

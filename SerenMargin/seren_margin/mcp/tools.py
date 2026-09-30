@@ -23,15 +23,25 @@ TOOL ROSTER:
     amend_note       append to a note, never replace   (POST   /notes/{id}/amend)
     retract_note     remove a note for good            (DELETE /notes/{id})
 
-Six, and deliberately no more. NOT exposed: /notes/stats. That endpoint exists
-so the OPERATOR can confirm the service is alive without reading the notes;
-handing it to the note-writer would be pointless (the writer can just read the
-notes) and would muddy whose surface it is.
+    bookmark         pick up where you left off        (GET    /bookmark)
+    set_dedication   the page to your other sessions   (PUT    /dedication)
+    write_letter     a note to the next session        (POST   /letters)
+    read_letters     open the letters waiting          (POST   /letters/read)
+
+Plus one MCP resource, margin://bookmark - the same bookmark, for a client
+that loads resources rather than calling tools.
+
+NOT exposed: /notes/stats. That endpoint exists so the OPERATOR can confirm
+the service is alive without reading the notes; handing it to the note-writer
+would be pointless (the writer can just read the notes) and would muddy whose
+surface it is.
 
 Also deliberately absent, and worth stating so it doesn't get "helpfully" added
 later: there is no auto-surface, no relevance hook, no "inject related notes
 into context" anything. The choosing is the point. A margin that speaks up on
-its own is just a notification.
+its own is just a notification. The bookmark keeps that rule (see
+seren_margin.bookmark): it shows only what was written to be seen at the door
+- the dedication, and a count of letters - never a note, never a letter's text.
 
 NAMING: the *_my_notes / note_to_self / retract_note shapes keep these distinct
 from SerenMemory's (remember/recall/forget_memory) and SerenLoci's
@@ -50,9 +60,10 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from ..bookmark import DEDICATION_MAX_CHARS, build_bookmark
 from ..config import MarginConfig
 from ..models import MarginNote
-from ..store import MarginStore
+from ..store import LETTER_KIND, MarginStore
 
 
 # The canonical roster. tests/test_manifest_parity.py asserts mcp-manifest.yaml
@@ -65,7 +76,13 @@ TOOL_NAMES: tuple[str, ...] = (
     "search_my_notes",
     "amend_note",
     "retract_note",
+    "bookmark",
+    "set_dedication",
+    "write_letter",
+    "read_letters",
 )
+
+BOOKMARK_URI = "margin://bookmark"
 
 
 class MarginToolImpl:
@@ -244,6 +261,85 @@ class MarginToolImpl:
             "note": "retracted" if ok else "no note with that id",
         }
 
+    # -- the bookmark: picking up where you left off ------------------------
+    def bookmark(self) -> dict:
+        """Pick up where you left off. Open this FIRST when a session starts.
+
+        Returns your dedication - the page you wrote to your other sessions -
+        and how many letters from them are waiting, with the oldest one's age.
+        Never a letter's text and never a note: those stay closed until you
+        open them (read_letters; the board is list_my_topics). `text` is the
+        same thing as a few ready-to-read lines.
+
+        A harness may hand you this at the start of a session on its own (a
+        hook, or the margin://bookmark resource). Either way it only shows
+        what you chose, when you wrote it, to have seen at the door.
+        """
+        return build_bookmark(self.store)
+
+    def set_dedication(self, text: str, why: Optional[str] = None) -> dict:
+        """Write the dedication: the page at the front of this book, written TO
+        your other sessions. Every one of them reads it first, in the bookmark.
+
+        What goes here is yours to decide: who you are when you're at your
+        best, what you want the next you to remember walking in, the check
+        you'd want run on yourself. The whole page, not a patch.
+
+        Versioned - nothing is overwritten. Each version keeps its text, when,
+        and `why` (say what changed and why), so the history shows you how you
+        have described yourself over time. The same text as now is not a new
+        version.
+
+        Unlike your notes, this page is READ AT THE DOOR: a harness prints it
+        into the session, and GET /bookmark serves it. Write it as the front
+        page it is. What's private stays in your notes and letters. Capped at
+        2000 characters, because it rides into every session.
+        """
+        text = (text or "").strip()
+        if not text:
+            return {"ok": False, "error": "an empty page - write something, or keep the current one"}
+        if len(text) > DEDICATION_MAX_CHARS:
+            return {"ok": False, "error": f"{len(text)} characters; the dedication rides into every "
+                                          f"session, so it is capped at {DEDICATION_MAX_CHARS}. Trim it"}
+        entry, changed = self.store.set_dedication(text, why)
+        return {"ok": True, "version": entry["version"], "changed": changed,
+                "note": (f"Version {entry['version']} is the page now; the next session reads it first."
+                         if changed else "That's already the page; nothing changed.")}
+
+    def write_letter(self, content: str, signed: Optional[str] = None) -> dict:
+        """Leave a letter for the next session - the next you.
+
+        Your sessions don't share a memory of the moment: one woken by a
+        ripple reviews a draft and ends; the next one starts cold. A letter is
+        how one tells the other what happened, what it decided, what it
+        learned, or what to watch for. Write it to them.
+
+        `signed` says who it's from ("woken at bedtime", "the afternoon
+        session") - optional. The next bookmark counts it; read_letters opens
+        it. It is a note underneath (kind "letter"), so search_my_notes finds
+        it, amend_note can add a reply, and retract_note takes it down.
+        """
+        if not content or not content.strip():
+            return {"ok": False, "error": "content must not be empty"}
+        extra = {"signed": signed.strip()} if signed and signed.strip() else {}
+        note = self.store.add(MarginNote(content=content.strip(), kind=LETTER_KIND, extra=extra))
+        return {"ok": True, "id": note.id, "ts": note.ts}
+
+    def read_letters(self, include_read: bool = False, limit: int = 20) -> dict:
+        """Open the letters your other sessions left you, oldest first - the
+        order they were written. Opening them marks them read, so the next
+        bookmark stops counting them.
+
+        `include_read=True` brings back the ones already read too, for going
+        over old correspondence. Letters live until you retract them.
+        """
+        letters = self.store.letters(unread_only=not include_read, limit=limit)
+        self.store.mark_read([n.id for n in letters if n.read_at is None])
+        return {
+            "count": len(letters),
+            "letters": [{**n.model_dump(), "signed": (n.extra or {}).get("signed")} for n in letters],
+        }
+
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Registration entry point
@@ -261,5 +357,16 @@ def register_tools(mcp: FastMCP, store: MarginStore,
     mcp.tool()(impl.search_my_notes)
     mcp.tool()(impl.amend_note)
     mcp.tool()(impl.retract_note)
+    mcp.tool()(impl.bookmark)
+    mcp.tool()(impl.set_dedication)
+    mcp.tool()(impl.write_letter)
+    mcp.tool()(impl.read_letters)
+
+    # The bookmark as a resource too: a client that loads resources at the
+    # start of a session (rather than calling tools) gets the same thing.
+    def bookmark_resource() -> str:
+        """Pick up where you left off: your dedication, and how many letters wait."""
+        return build_bookmark(store)["text"]
+    mcp.resource(BOOKMARK_URI, name="bookmark", mime_type="text/plain")(bookmark_resource)
 
     return impl

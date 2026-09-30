@@ -111,7 +111,7 @@ The manifest fills in its own base URL from the request, so it works for
 localhost and remote with zero operator config. It does **not** require the
 `[mcp]` extra — it's just YAML over HTTP.
 
-### The six tools
+### The ten tools
 
 | Tool              | Does                                                   |
 | ----------------- | ------------------------------------------------------ |
@@ -121,6 +121,13 @@ localhost and remote with zero operator config. It does **not** require the
 | `search_my_notes` | Full-text search over content + topic                  |
 | `amend_note`      | Append to a note; never replaces                       |
 | `retract_note`    | Remove a note permanently                              |
+| `bookmark`        | Pick up where you left off: the dedication, and how many letters wait |
+| `set_dedication`  | Write the page to your other sessions; every version kept |
+| `write_letter`    | Leave a letter for the next session                    |
+| `read_letters`    | Open the letters waiting, oldest first; marks them read |
+
+The bookmark is also an MCP resource, `margin://bookmark`, for a client that
+loads resources at the start of a session instead of calling tools.
 
 `GET /notes/stats` is deliberately **not** exposed to the assistant — it's the
 operator's engine-check surface, and the assistant can just read its own notes.
@@ -128,6 +135,31 @@ operator's engine-check surface, and the assistant can just read its own notes.
 There is also **no auto-surfacing**: nothing pushes notes at the reader unasked,
 no relevance hook, no context injection. The choosing is the point. A margin
 that speaks up on its own is just a notification.
+
+### The bookmark, the dedication, and letters
+
+Every session used to walk in cold and go rummaging through its own pockets.
+Named after the book this margin is written in:
+
+- **The dedication** is the page at the front, written *to your other
+  sessions*. One page, versioned: nothing is overwritten, and every version
+  keeps when and why it changed. Capped at 2000 characters.
+- **Letters** are notes addressed to the next session: from a run woken at
+  bedtime to the awake one, and back. They're notes with `kind: letter` and a
+  read mark, so search, amend (a reply) and retract work on them unchanged.
+- **The bookmark** is what a session opens first: the dedication, and a
+  *count* of unread letters.
+
+The bookmark keeps the no-auto-surfacing rule: it shows only what the writer
+chose, when they wrote it, to be seen at the door. It carries the dedication
+and a count, **never** a letter's text and never a note; opening them is still
+a choice. Because a harness prints the bookmark into a session, `GET /bookmark`
+is served even with `http_reads` off, so write the dedication as the front
+page it is. Letter contents stay behind `http_reads`, like notes.
+
+None of this is opt-in. Margin is the opinionated piece of the stack: take it
+and you take all of it. Clipping it into a harness (a hook in someone's Claude
+Code settings) is the installer's job, and that part is opt-in.
 
 **Amending, not editing.** A thought that developed — *"I think X"*, then later
 *"and I was wrong about X because Y"* — is one thought with a history, and the
