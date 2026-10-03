@@ -63,6 +63,25 @@ class UpdatesConfig(BaseModel):
     allow_prerelease: bool = False
 
 
+class BackupConfig(BaseModel):
+    """Snapshots of the notes database (seren_sinew.stores), on Margin's own
+    schedule, kept beside it. The snapshot is the database itself - there is
+    no plain-text export of a diary lying in a folder.
+
+    allow_pull: whether a snapshot may be handed over HTTP (GET
+    /stores/snapshots/{id}/archive), which is how a Lodestar stashes it on
+    another box. OFF by default, for the reason http_reads is: an archive is
+    the whole diary. Taking a snapshot and listing them say nothing of what
+    is inside and are always there. Whoever the margin belongs to turns this
+    on, knowing the copy then lives wherever the cluster head keeps it."""
+    enabled: bool = True
+    dir: str = ""                 # blank = `backups` beside the database
+    every_hours: float = 24.0     # 0 = never on its own
+    keep_daily: int = 14
+    keep_weekly: int = 8
+    allow_pull: bool = False
+
+
 class MarginConfig(BaseModel):
     """SerenMargin service config. Defaults are the Nano-floor: per-user,
     localhost-only, sqlite under the user's home directory.
@@ -105,6 +124,7 @@ class MarginConfig(BaseModel):
     # tools to these routes - and give it a bearer when you do.
     http_reads: bool = False
     updates: UpdatesConfig = Field(default_factory=UpdatesConfig)
+    backup: BackupConfig = Field(default_factory=BackupConfig)
 
     # REMOVED: notes_days. It configured an auto-expiry sweep that was taken
     # out when the lifecycle was (no pin, no expiry, no done - notes live until
@@ -116,6 +136,11 @@ class MarginConfig(BaseModel):
 
     def resolved_db_path(self) -> Path:
         return Path(self.db_path).expanduser()
+
+    def resolved_backup_dir(self) -> Path:
+        if self.backup.dir.strip():
+            return Path(self.backup.dir).expanduser().resolve()
+        return self.resolved_db_path().resolve().parent / "backups"
 
     def resolve_bearer(self) -> str:
         """The token callers must present, or "" for open. Same resolver
@@ -223,6 +248,17 @@ def load_config(path: Optional[str] = None) -> MarginConfig:
             _apply_server_overrides(cfg, server, source=str(yaml_path))
         elif server is not None:
             diag(f"[seren-margin] config: 'server' in {yaml_path} must be a mapping; ignoring")
+        backup = data.get("backup")
+        if isinstance(backup, dict):
+            try:
+                cfg.backup = BackupConfig(**{k: v for k, v in backup.items() if k in BackupConfig.model_fields})
+                for k in backup:
+                    if k not in BackupConfig.model_fields:
+                        diag(f"[seren-margin] config: ignoring unknown backup key '{k}' from {yaml_path}")
+            except Exception as e:  # noqa: BLE001 - a bad value keeps the defaults, like every other key
+                diag(f"[seren-margin] config: ignored bad 'backup' block from {yaml_path}: {e}")
+        elif backup is not None:
+            diag(f"[seren-margin] config: 'backup' in {yaml_path} must be a mapping; ignoring")
         # NOTE: data.get('tools') is intentionally NOT read here. That section
         # is reserved for a future plug-and-play MCP tool layer, which has its
         # own loader. Same file, different reader, by design.

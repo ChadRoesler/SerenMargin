@@ -97,6 +97,13 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         app.state.store = store
         app.state.cfg = cfg
 
+        # Snapshots of the notes database on Margin's own schedule.
+        _snap_task = None
+        if app.state.stores is not None and cfg.backup.every_hours > 0:
+            import asyncio
+            from seren_sinew.stores import snapshot_loop
+            _snap_task = asyncio.create_task(snapshot_loop(lambda: app.state.stores, cfg.backup.every_hours))
+
         # -- Optional MCP server --
         # Mounted ONLY if the [mcp] extra is installed. A missing package falls
         # back to pure-HTTP mode without crashing - the HTTP API and the
@@ -141,6 +148,8 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
                 await _mcp_stack.enter_async_context(session_manager.run())
                 diag("[seren-margin] MCP session manager running")
             yield
+        if _snap_task is not None:
+            _snap_task.cancel()
 
     app = FastAPI(
         title="SerenMargin",
@@ -207,6 +216,31 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         content = content.replace("__VERSION__", version_str)
 
         return Response(content=content, media_type="application/yaml")
+
+    # -- What Margin keeps, and snapshots of it (seren_sinew.stores) --
+    # The database, copied whole; no export. Counts only in the manifest: a
+    # snapshot's listing must not say what the notes say. The archive (the
+    # diary itself) is handed over HTTP only with backup.allow_pull.
+    from seren_sinew.stores import Store, StoreKeeper, add_store_routes
+
+    def _margin_extra() -> dict:
+        try:
+            notes = len(store.list_all(limit=1_000_000))
+        except Exception:  # noqa: BLE001
+            notes = None
+        return {"version": APP_VERSION, "counts": {"notes": notes}}
+
+    app.state.stores = StoreKeeper(
+        "seren-margin",
+        lambda: [Store("notes", "sqlite", str(cfg.resolved_db_path()),
+                       "the margin: private notes, letters and the dedication")],
+        cfg.resolved_backup_dir(), extra=_margin_extra,
+        keep_daily=cfg.backup.keep_daily, keep_weekly=cfg.backup.keep_weekly,
+        log=lambda m: diag(f"[seren-margin] {m}")) if cfg.backup.enabled else None
+    add_store_routes(
+        app, lambda: app.state.stores, archive_allowed=lambda: cfg.backup.allow_pull,
+        archive_refusal="the margin's snapshots stay on this box: an archive is the whole diary. "
+                        "backup.allow_pull: true lets a Lodestar stash them elsewhere.")
 
     @app.get("/health")
     async def health():
