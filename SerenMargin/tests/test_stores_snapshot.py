@@ -81,3 +81,21 @@ def test_off_and_no_restore_or_delete(tmp_path):
         sid = c.post("/stores/snapshot").json()["snapshot"]["id"]
         for path in ("/stores/restore", f"/stores/snapshots/{sid}"):
             assert c.post(path).status_code in (404, 405) and c.delete(path).status_code in (404, 405)
+
+
+def test_a_rehearsal_counts_the_notes_and_says_nothing_of_them(tmp_path):
+    """A restore's dry run (seren_sinew.stores). It needs no allow_pull: the
+    copy never leaves the box and the report is a count."""
+    from seren_sinew.stores import pack_snapshot
+    with _client(tmp_path) as c:
+        c.post("/notes", json={"content": SECRET, "topic": "private"})
+        snap = c.post("/stores/snapshot").json()["snapshot"]
+        c.post("/notes", json={"content": "written after", "topic": "later"})
+        r = c.post(f"/stores/snapshots/{snap['id']}/rehearse")
+        assert r.status_code == 200 and SECRET not in r.text, r.text
+        rep = r.json()
+        assert rep["ok"] and rep["check"] == {"counts": {"notes": 1}} and rep["live_store_touched"] is False, rep
+        assert len(c.app.state.store.list_all()) == 2
+        r = c.post("/stores/rehearse", content=pack_snapshot(Path(snap["path"])))
+        assert r.status_code == 200 and r.json()["ok"] and SECRET not in r.text, "a stash can send it back to be checked"
+        assert not list((Path(snap["path"]).parent / ".rehearsal").iterdir())

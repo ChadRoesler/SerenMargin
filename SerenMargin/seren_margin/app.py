@@ -230,11 +230,23 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
             notes = None
         return {"version": APP_VERSION, "counts": {"notes": notes}}
 
+    def _margin_check(restored, manifest, snapshot_dir) -> dict:
+        """A rehearsal's look at a restored COPY: opened as a MarginStore
+        (schema and migrations run on the copy) and counted. A count and
+        nothing else - a rehearsal's report must not say what a note says."""
+        import gc
+        st = MarginStore(restored["notes"] / cfg.resolved_db_path().name)
+        try:
+            return {"counts": {"notes": len(st.list_all(limit=1_000_000))}}
+        finally:
+            del st
+            gc.collect()                                    # its connections, so the scratch copy can be removed
+
     app.state.stores = StoreKeeper(
         "seren-margin",
         lambda: [Store("notes", "sqlite", str(cfg.resolved_db_path()),
                        "the margin: private notes, letters and the dedication")],
-        cfg.resolved_backup_dir(), extra=_margin_extra,
+        cfg.resolved_backup_dir(), extra=_margin_extra, check=_margin_check,
         keep_daily=cfg.backup.keep_daily, keep_weekly=cfg.backup.keep_weekly,
         log=lambda m: diag(f"[seren-margin] {m}")) if cfg.backup.enabled else None
     add_store_routes(
