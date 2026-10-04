@@ -26,7 +26,7 @@ dependencies = [
     # library". Margin still runs alone on localhost with nothing else deployed.
     "seren-meninges>=2.4.0,<3",
     # seren_sinew.stores: snapshots of the notes database (1.8.0: the archive gate).
-    "seren-sinew>=1.8.0,<2",
+    "seren-sinew>=1.10.0,<2",  # 1.10.0: seren_sinew.stores with the rehearsal and restore_at_startup
 ]
 
 [project.optional-dependencies]
