@@ -87,6 +87,15 @@ APP_VERSION = get_version("seren-margin", fallback=_fallback_version)
 
 def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
     cfg = config or load_config()
+    # A restore, when the config asks for one (backup.restore_from +
+    # restore_reason): into an empty margin only, before the store opens.
+    # Refused = the service does not start. No route does this.
+    if (cfg.backup.restore_from or "").strip():
+        from seren_sinew.stores import Store as _Store, restore_at_startup
+        restore_at_startup("seren-margin", [_Store("notes", "sqlite", str(cfg.resolved_db_path()))],
+                           cfg.backup.restore_from, cfg.backup.restore_reason,
+                           cfg.resolved_backup_dir() / "seren-margin",
+                           log=lambda m: diag(f"[seren-margin] {m}"))
     store = MarginStore(cfg.resolved_db_path())
 
     @asynccontextmanager

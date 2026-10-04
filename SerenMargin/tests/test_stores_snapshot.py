@@ -99,3 +99,24 @@ def test_a_rehearsal_counts_the_notes_and_says_nothing_of_them(tmp_path):
         r = c.post("/stores/rehearse", content=pack_snapshot(Path(snap["path"])))
         assert r.status_code == 200 and r.json()["ok"] and SECRET not in r.text, "a stash can send it back to be checked"
         assert not list((Path(snap["path"]).parent / ".rehearsal").iterdir())
+
+
+def test_a_new_box_restores_the_margin_at_startup_and_a_full_one_is_left_alone(tmp_path):
+    """backup.restore_from + restore_reason, into an empty margin only
+    (seren_sinew.stores.restore_at_startup). 3 Oct 2026."""
+    import pytest
+    from seren_sinew.stores import RestoreRefused
+    with _client(tmp_path) as c:
+        c.post("/notes", json={"content": SECRET, "topic": "private"})
+        snap = c.post("/stores/snapshot").json()["snapshot"]
+
+    def cfg(where, **backup):
+        return MarginConfig(db_path=str(tmp_path / where / "notes.db"),
+                            backup=BackupConfig(every_hours=0, restore_from=snap["path"], **backup))
+    with TestClient(create_app(cfg("new", restore_reason="moving to the cluster"))) as c:
+        assert [n.content for n in c.app.state.store.list_all()] == [SECRET]
+        c.post("/notes", json={"content": "written on the new box", "topic": "later"})
+    with TestClient(create_app(cfg("new", restore_reason="moving to the cluster"))) as c:
+        assert len(c.app.state.store.list_all()) == 2, "the second start passes the key by"
+    with pytest.raises(RestoreRefused, match="asked for with a reason"):
+        create_app(cfg("other"))
