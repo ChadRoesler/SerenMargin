@@ -306,7 +306,7 @@ class MarginStore:
         active/done distinction to filter on - this is the whole board.
 
         `topic` narrows to one thread. Matched case-insensitively and with
-        surrounding whitespace trimmed, because "the user" and "alice " are the same
+        surrounding whitespace trimmed, because "Alice" and "alice " are the same
         thread to whoever typed them and a filter that disagrees is just a
         silent empty result.
         """

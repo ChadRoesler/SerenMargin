@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from seren_margin.app import create_app
 from seren_margin.config import BackupConfig, MarginConfig, load_config
 
-SECRET = "the thing I have not told the user yet"
+SECRET = "the thing I have not told anyone yet"
 
 
 def _client(tmp_path, **backup):

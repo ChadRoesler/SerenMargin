@@ -1,9 +1,9 @@
 """The bookmark, the dedication, and letters: picking up where you left off.
 
 WHY: every session the writer walked in cold and had to remember to go looking
-- rummaging through their own pockets. the assistant, 28 Sept 2026: "home is when
-someone at the door says here's what happened while you were gone." the user named
-the pieces after the book this margin is written in (29 Sept):
+- rummaging through their own pockets. Home is when someone at the door says
+here's what happened while you were gone. The pieces are named after the
+book this margin is written in:
 
     bookmark    - pick up where you left off: the dedication, and how many
                   letters wait. The one thing a harness hands over at the start
@@ -27,8 +27,8 @@ And the dedication is read by whoever opens the book - a harness prints it
 into the session, GET /bookmark serves it. Write it as the front page it is.
 The notes and the letters stay in the diary.
 
-Margin is the opinionated piece of the stack (Design note: "if you take it,
-take it all"), so this is not opt in. Clipping a harness onto it - a hook in
+Margin is the opinionated piece of the stack ("if you take it, take it
+all"), so this is not opt in. Clipping a harness onto it - a hook in
 someone's Claude Code settings - is, and lives in the installer.
 """
 from __future__ import annotations

@@ -2,7 +2,7 @@
 schema migration that makes amend possible on an existing database.
 
 The migration test is the one that matters most. Everything else here is a
-feature; that one is "does the user's year-old notes.db survive the upgrade", and
+feature; that one is "does a year-old notes.db survive the upgrade", and
 the answer has to be provably yes on a service whose owner deliberately isn't
 reading the data closely enough to notice damage.
 """
@@ -244,10 +244,10 @@ def test_list_all_filters_by_topic(store):
 
 
 def test_topic_filter_is_case_and_whitespace_insensitive(store):
-    """'the user' and 'alice ' are the same thread to whoever typed them; a filter
+    """'Alice' and 'alice ' are the same thread to whoever typed them; a filter
     that disagrees is just a silent empty result."""
-    store.add(MarginNote(content="a", topic="the user"))
-    for probe in ("alice", "CHAD", "  the user  "):
+    store.add(MarginNote(content="a", topic="Alice"))
+    for probe in ("alice", "ALICE", "  Alice  "):
         assert len(store.list_all(topic=probe)) == 1
 
 

@@ -39,7 +39,7 @@ def test_root_reports_finder(client):
 
 def test_write_list_get_delete_cycle(client):
     # Write a note
-    r = client.post("/notes", json={"content": "ask the user about the supersede gap"})
+    r = client.post("/notes", json={"content": "ask about the supersede gap"})
     assert r.status_code == 200
     note_id = r.json()["id"]
     assert note_id
@@ -52,7 +52,7 @@ def test_write_list_get_delete_cycle(client):
     # Fetch it directly
     r = client.get(f"/notes/{note_id}")
     assert r.status_code == 200
-    assert r.json()["content"] == "ask the user about the supersede gap"
+    assert r.json()["content"] == "ask about the supersede gap"
 
     # Delete it
     r = client.delete(f"/notes/{note_id}")

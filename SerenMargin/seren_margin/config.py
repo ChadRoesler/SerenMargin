@@ -8,7 +8,7 @@ buddy who set up one service already knows how to set up this one:
       ~/seren-margin/seren-margin.yaml  ->  built-in defaults
     * the file is named seren-margin.yaml
 
-Lego framing (the user's): the YAML has a ``server:`` section that this service
+Lego framing: the YAML has a ``server:`` section that this service
 reads, and (future) a ``tools:`` section that a plug-and-play MCP layer reads
 when it wires note-writing tools. Same file, namespaced sections; each piece
 of the stack reads its own block and ignores the rest.
@@ -124,9 +124,9 @@ class MarginConfig(BaseModel):
     # Whether the HTTP API serves note CONTENT (GET /notes, /notes/search,
     # /notes/topics, /notes/{id}, and the note echoed back by amend). Off by
     # default: the writer reads through /mcp, which goes to the store in
-    # process, and a browser pointed at this port gets nothing to read. the user,
-    # 27 Sept 2026, after trimming 'stats' off /notes/stats loaded the notes:
-    # "its your diary... i dont want to see them unless you tell me them."
+    # process, and a browser pointed at this port gets nothing to read. Once,
+    # trimming 'stats' off /notes/stats loaded the notes in the operator's
+    # browser: the diary is the writer's, and nobody reads it unless told.
     # Turn it on only for the Workbench path, whose manifest proxies the read
     # tools to these routes - and give it a bearer when you do.
     http_reads: bool = False

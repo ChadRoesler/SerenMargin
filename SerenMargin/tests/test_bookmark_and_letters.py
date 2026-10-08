@@ -1,6 +1,6 @@
 """
-The bookmark, the dedication, and letters (seren_margin.bookmark; the assistant and
-Design note: - "pick up where you left off", "to the other sessions").
+The bookmark, the dedication, and letters (seren_margin.bookmark: "pick up
+where you left off", "to the other sessions").
 
 Pinned here:
 - the dedication is versioned: never overwritten, the same text is not a new

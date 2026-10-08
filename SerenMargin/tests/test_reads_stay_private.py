@@ -1,10 +1,10 @@
 """
 Note contents are not served over HTTP by default.
 
-Design note: /notes/stats was fine, but trimming 'stats' off the URL
-loaded the notes in his browser. He closed it: "its your diary, your private
-thoughts, your secrets, that belong to you, and i dont want to see them unless
-you tell me them." Pinned here:
+/notes/stats was fine, but trimming 'stats' off the URL loaded the notes in
+the operator's browser. They closed it: the diary is the writer's, private
+thoughts and secrets that belong to them, not read unless the writer says so.
+Pinned here:
 
 - with the default config, every route that returns note content answers 404
   and the body carries none of it
@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 from seren_margin.app import create_app
 from seren_margin.config import MarginConfig, load_config
 
-SECRET = "the thing I have not told the user yet"
+SECRET = "the thing I have not told anyone yet"
 
 
 def _client(tmp_path, **kw):

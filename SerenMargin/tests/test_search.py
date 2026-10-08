@@ -25,7 +25,7 @@ def store(tmp_path):
 def _seed(store: MarginStore) -> None:
     store.add(MarginNote(
         content="the user mentioned the Kraken tattoo sits over the collarbone",
-        topic="alice", kind="observation"))
+        topic="user", kind="observation"))
     store.add(MarginNote(
         content="the consolidator redraft budget feels too tight at 3",
         topic="serenmemory", kind="question"))
@@ -50,7 +50,7 @@ def test_search_finds_by_content_word(store):
     hits, finder = store.search("collarbone")
     assert finder == "fts"
     assert len(hits) == 1
-    assert "Behemoth" in hits[0].content
+    assert "Kraken" in hits[0].content
 
 
 def test_search_finds_by_topic(store):
@@ -69,11 +69,11 @@ def test_search_matches_stem_via_porter(store):
 
 def test_natural_language_question_finds_the_named_thing(store):
     """The stopword-bleed shape, end to end: a full question whose only
-    discriminating token is 'Behemoth'."""
+    discriminating token is 'Kraken'."""
     _seed(store)
-    hits, _ = store.search("what was that thing about the Behemoth again?")
+    hits, _ = store.search("what was that thing about the Kraken again?")
     assert hits
-    assert "Behemoth" in hits[0].content
+    assert "Kraken" in hits[0].content
 
 
 def test_empty_query_returns_nothing_not_everything(store):
@@ -126,14 +126,14 @@ def test_query_operators_in_text_do_not_blow_up(store):
 
 def test_fts_query_short_query_ands_raw_tokens():
     """<=3 tokens is deliberate; every word is required, stopwords included."""
-    assert _fts_query("behemoth tattoo") == '"behemoth" "tattoo"'
+    assert _fts_query("kraken tattoo") == '"kraken" "tattoo"'
     assert _fts_query("the redraft budget") == '"the" "redraft" "budget"'
 
 
 def test_fts_query_long_query_strips_scaffolding_and_ors():
-    q = _fts_query("what was that thing about the Behemoth again?")
+    q = _fts_query("what was that thing about the Kraken again?")
     assert " OR " in q
-    assert '"behemoth"' in q
+    assert '"kraken"' in q
     assert '"what"' not in q and '"about"' not in q and '"the"' not in q
 
 
@@ -166,16 +166,16 @@ def test_like_fallback_returns_results(store, monkeypatch):
     hits, finder = store.search("collarbone")
     assert finder == "like"
     assert len(hits) == 1
-    assert "Behemoth" in hits[0].content
+    assert "Kraken" in hits[0].content
 
 
 def test_like_fallback_ands_tokens(store, monkeypatch):
     _seed(store)
     monkeypatch.setattr(store, "has_fts", False)
     # Both tokens present in one note -> hit.
-    assert store.search("Behemoth collarbone")[0]
+    assert store.search("Kraken collarbone")[0]
     # Tokens from two different notes -> no single note has both.
-    assert store.search("Behemoth Tabletop")[0] == []
+    assert store.search("Kraken Tabletop")[0] == []
 
 
 def test_like_fallback_escapes_wildcards(store, monkeypatch):

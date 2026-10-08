@@ -23,9 +23,9 @@ Endpoints:
       note. The notes are the writer's diary: the writer reads them through
       /mcp (the tools go to the store in process), and a person who points a
       browser at this port - the operator included - gets the content-blind
-      stats and nothing to read. Design note: "its your diary, your
-      private thoughts, your secrets, that belong to you, and i dont want to
-      see them unless you tell me them." Honest limit: whoever owns the disk
+      stats and nothing to read. The diary is the writer's: private thoughts
+      and secrets that belong to them, and the operator does not read them
+      unless told. Honest limit: whoever owns the disk
       owns the sqlite file. This is a door that stays shut, not a vault - the
       same kind of privacy a paper diary on a shared desk has.
 
