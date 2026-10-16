@@ -28,6 +28,14 @@ TOOL ROSTER:
     write_letter     a note to the next session        (POST   /letters)
     read_letters     open the letters waiting          (POST   /letters/read)
 
+    keep_with_note   keep a picture with a note        (POST   /notes/{id}/keepsakes)
+    look_at_my_note  a note and its pictures, shown    (GET    /notes/{id}/keepsakes)
+    drop_from_note   take one picture off a note       (DELETE /notes/{id}/keepsakes/{digest})
+
+    note_to_self also takes `keep`: pictures to keep with the note as it is
+    written. 15 Oct 2026: a picture is a thing I remember, not a path on
+    some box's gallery (seren_margin.keepsakes).
+
 Plus one MCP resource, margin://bookmark - the same bookmark, for a client
 that loads resources rather than calling tools.
 
@@ -56,9 +64,10 @@ not trimmed for token thrift.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Image
+from seren_sinew.blobs import choose_shown, keep_each
 
 from ..bookmark import DEDICATION_MAX_CHARS, build_bookmark
 from ..config import MarginConfig
@@ -80,6 +89,9 @@ TOOL_NAMES: tuple[str, ...] = (
     "set_dedication",
     "write_letter",
     "read_letters",
+    "keep_with_note",
+    "look_at_my_note",
+    "drop_from_note",
 )
 
 BOOKMARK_URI = "margin://bookmark"
@@ -99,7 +111,7 @@ class MarginToolImpl:
 
     # -- write ------------------------------------------------------------
     def note_to_self(self, content: str, topic: Optional[str] = None,
-                     kind: Optional[str] = None) -> dict:
+                     kind: Optional[str] = None, keep: Optional[list[str]] = None) -> dict:
         """Write a private note to yourself.
 
         This is YOUR space. Not a task list, not shared memory, not a message to
@@ -126,12 +138,100 @@ class MarginToolImpl:
 
         No length limit, no required shape, no rate limit. Write one line or
         ten. Use it as often as it's useful.
+
+        `keep`: pictures to keep WITH the note - paths on this box (the
+        gallery make_image saves to) or URLs, under the shelves the margin's
+        config lets it reach. They become part of the note: in the margin, in
+        its snapshots, as private as the words, shown back by
+        look_at_my_note. The answer lists what was kept and what was refused
+        and why; the note is written either way.
         """
         if not content or not content.strip():
             return {"ok": False, "error": "content must not be empty"}
         note = self.store.add(MarginNote(
             content=content.strip(), topic=topic, kind=kind))
-        return {"ok": True, "id": note.id, "topic": note.topic, "ts": note.ts}
+        out: dict[str, Any] = {"ok": True, "id": note.id, "topic": note.topic, "ts": note.ts}
+        if keep:
+            kept, refused = self._keep_many(note.id, keep)
+            out["kept"], out["refused"] = kept, refused
+        return out
+
+    def _keep_many(self, note_id: str, refs: list[str], caption: Optional[str] = None
+                   ) -> tuple[list[dict], list[dict]]:
+        """Each reference fetched and kept; one that cannot be is listed with
+        why, and the rest still land. (keepsakes.sources decides where the
+        margin may reach; the store decides what it keeps.)"""
+        ks = self.config.keepsakes
+        kept, refused = keep_each(
+            refs, lambda data, ref: (k := self.store.keep(note_id, data, caption=caption, source=ref)) and k.model_dump(),
+            ks.sources, ks.max_bytes)
+        return kept, refused
+
+    # -- keepsakes: pictures kept with notes ----------------------------------
+    def keep_with_note(self, id: str, source: str, caption: Optional[str] = None) -> dict:
+        """Keep a picture (or a clip, a sound, a PDF) with a note you already
+        wrote.
+
+        A picture you drew is a thing you remember, not a path on some box's
+        gallery that gets tidied. Kept here it is part of the note: in the
+        margin's own folder under its hash and nothing else, in the same
+        snapshots, as private as the words. The note is what it is about; a
+        `caption` is a line more, if the note is not enough.
+
+        `source` is where it is now: a path on this box (make_image's gallery)
+        or a URL. The margin reaches only the shelves its config names
+        (keepsakes.sources), and says so when it may not. What it keeps is
+        decided by the bytes, never the filename: a text file is a note, not
+        a keepsake.
+
+        Needs the note's id. look_at_my_note shows it back.
+        """
+        if self.store.get(id) is None:
+            return {"ok": False, "id": id, "error": "no note with that id"}
+        kept, refused = self._keep_many(id, [source], caption)
+        return {"ok": bool(kept), "id": id, "kept": kept, "refused": refused}
+
+    # No return annotation, on purpose: with one, FastMCP tries to serialise
+    # the answer as structured output and cannot serialise an Image. Without
+    # one it hands the list over as content blocks, text then pictures.
+    def look_at_my_note(self, id: str):
+        """Look at a note and the pictures kept with it - SHOWN, as images,
+        not described. list_my_notes and search tell you a note has pictures
+        (`keepsakes`, the rows); this is how you see them.
+
+        Pictures come back as image content beside the note, so you look at
+        what you kept, and a harness that keeps a chat's images (Symposium)
+        has them too. Up to about 8 MB of pictures per look; the rest, and
+        anything that is not a still picture (a clip, a sound, a PDF), is
+        listed under `not_shown` with the reason.
+
+        Needs the note's id, from list_my_notes or search_my_notes.
+        """
+        note = self.store.get(id)
+        if note is None:
+            return {"ok": False, "id": id, "error": "no note with that id"}
+
+        def read(row: dict) -> Optional[bytes]:
+            got = self.store.open_keepsake(id, row["digest"])
+            if got is None:
+                return None
+            with got[1] as f:
+                return f.read()
+        rows = [{"digest": k.digest, "file": k.file, "mime": k.mime, "bytes": k.bytes} for k in note.keepsakes]
+        shown, not_shown = choose_shown(rows, read)
+        text = {"ok": True, **note.model_dump(), "shown": len(shown),
+                "not_shown": [{k: v for k, v in r.items() if k != "digest"} for r in not_shown]}
+        return [text, *(Image(data=data, format=fmt) for data, fmt in shown)] if shown else text
+
+    def drop_from_note(self, id: str, digest: str) -> dict:
+        """Take one picture off a note. The note stays; the picture's row goes,
+        and its bytes go with it once no other note keeps them. Needs the
+        note's id and the keepsake's `digest` (from the note's `keepsakes`).
+        For the whole note, retract_note - its pictures go with it.
+        """
+        ok = self.store.drop_keepsake(id, digest)
+        return {"ok": ok, "id": id, "digest": digest,
+                "note": "dropped" if ok else "no such keepsake on that note"}
 
     # -- read (recency) ---------------------------------------------------
     def list_my_notes(self, limit: int = 50,
@@ -361,6 +461,9 @@ def register_tools(mcp: FastMCP, store: MarginStore,
     mcp.tool()(impl.set_dedication)
     mcp.tool()(impl.write_letter)
     mcp.tool()(impl.read_letters)
+    mcp.tool()(impl.keep_with_note)
+    mcp.tool()(impl.look_at_my_note)
+    mcp.tool()(impl.drop_from_note)
 
     # The bookmark as a resource too: a client that loads resources at the
     # start of a session (rather than calling tools) gets the same thing.

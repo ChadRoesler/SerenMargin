@@ -1,0 +1,18 @@
+<div id="globalErr"></div>
+
+<!-- STATUS: is the engine running. Counts, never words. -->
+<section class="view active" id="status">
+    <div class="stat-row" id="stats"><div class="empty">Loading…</div></div>
+    <h3 class="group-h">Notes by kind</h3>
+    <p class="muted small">Kinds are bucketed to a fixed vocabulary on the way out (anything else counts as <code>other</code>), so a free-text kind can never carry a note's words here.</p>
+    <div class="bars" id="kindBars"></div>
+    <h3 class="group-h">Service</h3>
+    <div class="meta-box" id="serviceMeta"></div>
+    <p class="muted small closed">This page reads <code>/notes/stats</code>, <code>/stores</code> and <code>/</code>, and nothing else. The diary is the writer's; a browser pointed at this port gets the counts and the backups, and nothing to read.</p>
+</section>
+
+<!-- BACKUPS: the same panel every Seren viewer has. -->
+<section class="view" id="backups">
+    <div class="backups" id="backupPanel"><div class="empty">Loading…</div></div>
+    <p class="muted small">Snapshots are the database and the keepsakes folder, copied whole; a listing says nothing of what a note says. The archive leaves this box only with <code>backup.allow_pull</code>.</p>
+</section>

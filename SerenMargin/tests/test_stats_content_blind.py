@@ -83,7 +83,8 @@ def test_stats_response_keys_are_closed_set(client):
     """A future field added to NoteStats should have to walk past this test.
     Content leaks arrive as innocuous-looking additions."""
     client.post("/notes", json={"content": "x"})
-    assert set(client.get("/notes/stats").json().keys()) == {"total", "kinds"}
+    assert set(client.get("/notes/stats").json().keys()) == {"total", "kinds", "keepsakes"}
+    assert client.get("/notes/stats").json()["keepsakes"] == {"count": 0, "bytes": 0}, "a count and a size, never a name"
 
 
 # ── the bucketer, directly ──────────────────────────────────────────────────

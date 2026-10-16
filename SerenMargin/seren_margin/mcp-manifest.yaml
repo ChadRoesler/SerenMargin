@@ -11,7 +11,7 @@
 #  on its own process, so a client can connect directly with no
 #  SerenMcpServer, no runtime host, nothing else deployed.
 #
-#  BOTH SURFACES MUST EXPOSE THE SAME TEN TOOLS. The implementations live
+#  BOTH SURFACES MUST EXPOSE THE SAME THIRTEEN TOOLS. The implementations live
 #  in seren_margin/mcp/tools.py; this file mirrors them, and
 #  tests/test_manifest_parity.py fails the build if the rosters diverge.
 #  That test exists because the previous version of this file advertised
@@ -44,7 +44,7 @@ metadata:
   version: "__VERSION__"
   license: AGPL-3.0-or-later
   authors:
-    - { name: Chad Roesler, contact: alice@example.com }
+    - { name: Chad Roesler, contact: chadRoesler@me.com }
   site: github.com/ChadRoesler/SerenMargin
 
 configuration:
@@ -74,6 +74,9 @@ tools:
       that's yours.
 
       No length limit, no required shape, no rate limit.
+
+      A picture to keep with the note: write the note, then keep_with_note.
+      (The /mcp surface's note_to_self takes `keep` directly.)
     invoke:
       kind: web
       method: POST
@@ -312,3 +315,61 @@ tools:
     parameters:
       - { name: include_read, type: boolean, required: false, default: false,
           description: "Also bring back letters already read." }
+
+  # ─── 10. KEEPSAKES: pictures kept with notes (seren_margin.keepsakes) ──
+  - name: keep_with_note
+    description: |
+      Keep a picture (or a clip, a sound, a PDF) with a note you already
+      wrote. A picture you drew is a thing you remember, not a path on some
+      box's gallery that gets tidied: kept here it is part of the note, in
+      the margin's own folder under its hash and nothing else, in the same
+      snapshots, as private as the words. `source` is where it is now - a
+      path on the margin's box or a URL, under the shelves its config lets it
+      reach (keepsakes.sources). What it keeps is decided by the bytes, never
+      the filename. Needs the note's id.
+    invoke:
+      kind: web
+      method: POST
+      path: /notes/{id}/keepsakes
+      body_template: |
+        {
+          "source": "{source}",
+          "caption": "{caption}"
+        }
+    parameters:
+      - { name: id, type: string, required: true,
+          description: "The note's id." }
+      - { name: source, type: string, required: true,
+          description: "Where the picture is now: a path on the margin's box, or a URL." }
+      - { name: caption, type: string, required: false, default: "",
+          description: "A line about it, if the note is not enough." }
+
+  - name: look_at_my_note
+    description: |
+      A note and the pictures kept with it. On this path (the Workbench
+      manifest, HTTP) you get the rows - what is kept, how big, its `file`
+      name - and each picture's bytes sit at /notes/{id}/keepsakes/{digest}.
+      The /mcp surface SHOWS them as image content beside the note. Needs
+      server.http_reads: true here, like every read of the diary.
+    invoke:
+      kind: web
+      method: GET
+      path: /notes/{id}/keepsakes
+    parameters:
+      - { name: id, type: string, required: true,
+          description: "The note's id." }
+
+  - name: drop_from_note
+    description: |
+      Take one picture off a note. The note stays; the picture's row goes,
+      and its bytes go with it once no other note keeps them. Needs the
+      note's id and the keepsake's digest (from the note's `keepsakes`).
+    invoke:
+      kind: web
+      method: DELETE
+      path: /notes/{id}/keepsakes/{digest}
+    parameters:
+      - { name: id, type: string, required: true,
+          description: "The note's id." }
+      - { name: digest, type: string, required: true,
+          description: "The keepsake's digest, as the note lists it." }

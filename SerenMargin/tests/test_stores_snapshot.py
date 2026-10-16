@@ -41,7 +41,7 @@ def test_listing_and_taking_a_snapshot_say_nothing_of_the_notes(tmp_path):
         r = c.post("/stores/snapshot", json={"reason": "by hand"})
         assert r.status_code == 200 and SECRET not in r.text
         snap = r.json()["snapshot"]
-        assert snap["counts"] == {"notes": 1}
+        assert snap["counts"] == {"notes": 1, "keepsakes": 0}
         root = Path(snap["path"])
         man = (root / "manifest.json").read_text(encoding="utf-8")
         assert SECRET not in man and json.loads(man)["exports"] == {}, "no plain-text export of a diary"
@@ -94,7 +94,7 @@ def test_a_rehearsal_counts_the_notes_and_says_nothing_of_them(tmp_path):
         r = c.post(f"/stores/snapshots/{snap['id']}/rehearse")
         assert r.status_code == 200 and SECRET not in r.text, r.text
         rep = r.json()
-        assert rep["ok"] and rep["check"] == {"counts": {"notes": 1}} and rep["live_store_touched"] is False, rep
+        assert rep["ok"] and rep["check"] == {"counts": {"notes": 1, "keepsakes": 0}} and rep["live_store_touched"] is False, rep
         assert len(c.app.state.store.list_all()) == 2
         r = c.post("/stores/rehearse", content=pack_snapshot(Path(snap["path"])))
         assert r.status_code == 200 and r.json()["ok"] and SECRET not in r.text, "a stash can send it back to be checked"

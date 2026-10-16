@@ -96,6 +96,39 @@ server:
 #     max_content_chars: 2048
 #     allowed_kinds: ["reminder", "observation", "question"]
 
+# ── Snapshots (seren_sinew.stores) ───────────────────────────────────────
+#
+# The margin snapshots its own database and keepsakes folder on its own
+# schedule, into `backups` beside the database. A snapshot's listing says
+# nothing of what a note says. The archive - the whole diary - is handed over
+# HTTP (to a Lodestar, to stash elsewhere) only with allow_pull.
+# backup:
+#   enabled: true
+#   every_hours: 24            # 0 = never on its own
+#   keep_daily: 14
+#   keep_weekly: 8
+#   allow_pull: false
+#   compress: gz               # gz | xz (half the size on a database) | none
+#   restore_from: ""           # a snapshot folder or archive, into an EMPTY margin only
+#   restore_reason: ""         # required with restore_from; kept in the receipt
+
+# ── Keepsakes: pictures kept with notes (seren_margin.keepsakes) ─────────
+#
+# keep_with_note (and note_to_self's `keep`) keep a picture, a clip, a sound
+# or a PDF WITH a note: the bytes in `keepsakes` beside the database under
+# their hash, every word about them a row in notes.db, all in the same
+# snapshot under the same allow_pull. `sources` names where one may be taken
+# from: folders on this box, and URL prefixes. Nothing listed = nothing can
+# be kept, and the tool says so.
+# keepsakes:
+#   enabled: true
+#   dir: ""                    # blank = `keepsakes` beside the database
+#   max_bytes: 268435456       # one keepsake (256 MB)
+#   max_total: 34359738368     # the folder (32 GB)
+#   sources:
+#     - ~/seren/stores/workbench/gallery     # where make_image saves
+#     - https://                              # anything over TLS
+
 # ── Update checking ───────────────────────────────────────────────────
 #
 # Asks the package index whether a newer seren-margin exists, and reports it on

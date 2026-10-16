@@ -16,6 +16,10 @@ Endpoints:
     PUT    /dedication        - a new version of the dedication (never overwrites)
     POST   /letters           - a letter to the next session
     POST   /letters/read      - open unread letters, oldest first; marks them read *
+    POST   /notes/{id}/keepsakes          - keep a picture with a note (seren_margin.keepsakes)
+    GET    /notes/{id}/keepsakes          - the pictures a note keeps: the rows        *
+    GET    /notes/{id}/keepsakes/{digest} - one picture's bytes                         *
+    DELETE /notes/{id}/keepsakes/{digest} - take one picture off a note
     /mcp                      - MCP server, ONLY when [mcp] extras are installed
 
     * CONTENT OVER HTTP IS OFF BY DEFAULT. These answer 404 unless the server
@@ -43,7 +47,7 @@ TWO WAYS TO REACH THE TOOLS, both first-class:
     2. Standalone path - `pip install seren-margin[mcp]` mounts a real MCP
        endpoint at /mcp on this same process, so a client can connect directly
        with nothing else deployed.
-Same ten tools either way, defined once in seren_margin.mcp.tools.
+Same thirteen tools either way, defined once in seren_margin.mcp.tools.
 
 AUTH, IF YOU WANT IT. With no token configured (the default) every route is
 open and the loopback bind is the whole guard - the way it has always been.
@@ -55,11 +59,12 @@ makes anyone set one to keep a diary on their own machine.
 """
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager, AsyncExitStack
 from typing import Optional
 
 from fastapi import FastAPI, Body, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from seren_meninges import get_version
 from seren_meninges.auth import DEFAULT_PUBLIC_PATHS, bearer_auth_middleware
 from seren_meninges.updates import updates_payload
@@ -70,7 +75,7 @@ from importlib.metadata import version as pkg_version, PackageNotFoundError
 
 from .bookmark import DEDICATION_MAX_CHARS, build_bookmark
 from .config import MarginConfig, load_config
-from .models import DedicationSet, LetterCreate, MarginNote, NoteAmend, NoteCreate, NoteStats
+from .models import DedicationSet, KeepsakeCreate, LetterCreate, MarginNote, NoteAmend, NoteCreate, NoteStats
 from .store import LETTER_KIND, MarginStore
 from ._diag import diag
 import logging
@@ -87,16 +92,33 @@ APP_VERSION = get_version("seren-margin", fallback=_fallback_version)
 
 def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
     cfg = config or load_config()
+    from seren_sinew.blobs import BlobStore
+    from seren_sinew.stores import Store, StoreKeeper, add_store_routes, restore_at_startup
+
+    # The pictures kept with notes: a folder beside the database, files named
+    # by their hash (seren_sinew.blobs). None = the margin keeps none.
+    keep = (BlobStore(cfg.resolved_keepsakes_dir(), max_bytes=cfg.keepsakes.max_bytes, max_total=cfg.keepsakes.max_total)
+            if cfg.keepsakes.enabled else None)
+
+    def declared() -> list[Store]:
+        """What Margin keeps, for a snapshot and for a restore. The database
+        is required; the keepsakes folder is optional on a restore, since a
+        snapshot from before it existed holds none."""
+        stores = [Store("notes", "sqlite", str(cfg.resolved_db_path()),
+                        "the margin: private notes, letters and the dedication")]
+        if keep is not None:
+            stores.append(keep.store("keepsakes", "pictures and clips kept with the notes, named by their hash"))
+        return stores
+
     # A restore, when the config asks for one (backup.restore_from +
     # restore_reason): into an empty margin only, before the store opens.
     # Refused = the service does not start. No route does this.
     if (cfg.backup.restore_from or "").strip():
-        from seren_sinew.stores import Store as _Store, restore_at_startup
-        restore_at_startup("seren-margin", [_Store("notes", "sqlite", str(cfg.resolved_db_path()))],
+        restore_at_startup("seren-margin", declared(),
                            cfg.backup.restore_from, cfg.backup.restore_reason,
                            cfg.resolved_backup_dir() / "seren-margin",
                            log=lambda m: diag(f"[seren-margin] {m}"))
-    store = MarginStore(cfg.resolved_db_path())
+    store = MarginStore(cfg.resolved_db_path(), keep)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -227,36 +249,43 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         return Response(content=content, media_type="application/yaml")
 
     # -- What Margin keeps, and snapshots of it (seren_sinew.stores) --
-    # The database, copied whole; no export. Counts only in the manifest: a
-    # snapshot's listing must not say what the notes say. The archive (the
-    # diary itself) is handed over HTTP only with backup.allow_pull.
-    from seren_sinew.stores import Store, StoreKeeper, add_store_routes
+    # The database, copied whole, and the keepsakes folder beside it (files
+    # named by their hash, hardlinked from the previous snapshot); no export.
+    # Counts only in the manifest: a snapshot's listing must not say what the
+    # notes say, and a hash says nothing of what a picture shows. The archive
+    # (the diary itself) is handed over HTTP only with backup.allow_pull.
 
     def _margin_extra() -> dict:
         try:
-            notes = len(store.list_all(limit=1_000_000))
+            counts = {"notes": len(store.list_all(limit=1_000_000)), "keepsakes": store.keepsake_totals()["count"]}
         except Exception:  # noqa: BLE001
-            notes = None
-        return {"version": APP_VERSION, "counts": {"notes": notes}}
+            counts = {"notes": None}
+        return {"version": APP_VERSION, "counts": counts}
 
     def _margin_check(restored, manifest, snapshot_dir) -> dict:
         """A rehearsal's look at a restored COPY: opened as a MarginStore
-        (schema and migrations run on the copy) and counted. A count and
+        (schema and migrations run on the copy) and counted, and every
+        picture the notes name looked for in the copied folder. Counts and
         nothing else - a rehearsal's report must not say what a note says."""
         import gc
-        st = MarginStore(restored["notes"] / cfg.resolved_db_path().name)
+        st = MarginStore(restored["notes"] / cfg.resolved_db_path().name,
+                         BlobStore(restored["keepsakes"]) if "keepsakes" in restored else None)
         try:
-            return {"counts": {"notes": len(st.list_all(limit=1_000_000))}}
+            rep: dict = {"counts": {"notes": len(st.list_all(limit=1_000_000)),
+                                    "keepsakes": st.keepsake_totals()["count"]}}
+            named = st.referenced_digests()
+            lost = [d for d in named if st.keepsakes is None or not st.keepsakes.has(d)]
+            if lost:
+                rep["problems"] = [f"{len(lost)} of the {len(named)} keepsake(s) the notes name are not in the copy"]
+            return rep
         finally:
             del st
             gc.collect()                                    # its connections, so the scratch copy can be removed
 
     app.state.stores = StoreKeeper(
-        "seren-margin",
-        lambda: [Store("notes", "sqlite", str(cfg.resolved_db_path()),
-                       "the margin: private notes, letters and the dedication")],
+        "seren-margin", declared,
         cfg.resolved_backup_dir(), extra=_margin_extra, check=_margin_check,
-        keep_daily=cfg.backup.keep_daily, keep_weekly=cfg.backup.keep_weekly,
+        keep_daily=cfg.backup.keep_daily, keep_weekly=cfg.backup.keep_weekly, compress=cfg.backup.compress,
         log=lambda m: diag(f"[seren-margin] {m}")) if cfg.backup.enabled else None
     add_store_routes(
         app, lambda: app.state.stores, archive_allowed=lambda: cfg.backup.allow_pull,
@@ -266,6 +295,30 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
     @app.get("/health")
     async def health():
         return {"ok": True, "service": "seren-margin", "version": APP_VERSION}
+
+    # ── the viewer: the engine check in the family's clothes ───────────────
+    # A page, not a diary. It shows what /notes/stats and /stores already
+    # serve - counts, bucketed kinds, keepsakes as a count and a size, the
+    # snapshots and the last pull and rehearsal - on the shared Seren
+    # baseplate, so the margin's status reads like its siblings' instead of a
+    # bare JSON page. It fetches those routes and "/" and NOTHING else;
+    # tests/test_viewer.py reads the page's script and fails on a fourth
+    # route. No note, topic, letter or dedication is ever loaded here. The
+    # page itself is public like every Seren viewer; its calls carry the
+    # bearer when one is set. 15 Oct 2026.
+    @app.get("/viewer")
+    async def viewer():
+        from pathlib import Path
+
+        from seren_meninges.viewer import render_from_dir
+        html = render_from_dir(
+            Path(__file__).resolve().parent / "viewer" / "ui",
+            title="SerenMargin",
+            brand="Seren<b>Margin</b> · the margins",
+            subtitle=f"v{APP_VERSION} · private notes-to-self · nothing to read here",
+            accent="#d1cbba",
+        )
+        return Response(content=html, media_type="text/html; charset=utf-8")
 
     # ── note CRUD ─────────────────────────────────────────────────────────
 
@@ -394,6 +447,62 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         store.mark_read([n.id for n in letters if n.read_at is None])
         return {"count": len(letters),
                 "letters": [{**n.model_dump(), "signed": (n.extra or {}).get("signed")} for n in letters]}
+
+    # ── keepsakes: pictures kept with notes (seren_margin.keepsakes) ──────
+    # Keeping and dropping are writes, like the note's own; what a note keeps
+    # and the bytes themselves are diary contents, off unless http_reads.
+
+    @app.post("/notes/{note_id}/keepsakes")
+    async def keep_with_note(note_id: str, body: KeepsakeCreate = Body(...)):
+        from seren_sinew.blobs import BlobStoreFull, BlobTooLarge
+
+        from .keepsakes import SourceRefused, fetch
+        if store.get(note_id) is None:
+            raise HTTPException(404, f"no note '{note_id}'")
+        try:
+            data = await asyncio.to_thread(fetch, body.source, cfg.keepsakes)
+            k = await asyncio.to_thread(store.keep, note_id, data, body.caption, body.source)
+        except (SourceRefused, BlobTooLarge, BlobStoreFull, ValueError) as e:
+            raise HTTPException(400, str(e))
+        if k is None:
+            raise HTTPException(404, f"no note '{note_id}'")
+        # the row's words (caption, source) stay in the diary; this says what was kept
+        return {"ok": True, "id": note_id, "keepsake": {"digest": k.digest, "bytes": k.bytes, "mime": k.mime, "file": k.file}}
+
+    @app.get("/notes/{note_id}/keepsakes")
+    async def list_keepsakes(note_id: str):
+        _content_over_http()
+        note = store.get(note_id)
+        if note is None:
+            raise HTTPException(404, f"no note '{note_id}'")
+        return {"id": note_id, "count": len(note.keepsakes), "keepsakes": [k.model_dump() for k in note.keepsakes]}
+
+    @app.get("/notes/{note_id}/keepsakes/{digest}")
+    async def get_keepsake(note_id: str, digest: str):
+        """The bytes, served as what they are and nothing more: nosniff, a
+        sandbox CSP, shown inline under the keepsake's own name. Only through
+        a note that keeps them - a digest alone opens nothing."""
+        _content_over_http()
+        got = store.open_keepsake(note_id, digest)
+        if got is None:
+            raise HTTPException(404, f"no keepsake '{digest}' on note '{note_id}'")
+        k, fh = got
+
+        def body():
+            with fh:
+                while chunk := fh.read(1 << 20):
+                    yield chunk
+        return StreamingResponse(body(), media_type=k.mime or "application/octet-stream", headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox; default-src 'none'; img-src data:; media-src data:",
+            "Content-Disposition": f'inline; filename="{k.file}"',
+            "Content-Length": str(k.bytes), "Cache-Control": "private, max-age=86400"})
+
+    @app.delete("/notes/{note_id}/keepsakes/{digest}")
+    async def drop_from_note(note_id: str, digest: str):
+        if not store.drop_keepsake(note_id, digest):
+            raise HTTPException(404, f"no keepsake '{digest}' on note '{note_id}'")
+        return {"ok": True, "id": note_id, "digest": digest, "dropped": True}
 
     @app.get("/notes/{note_id}")
     async def get_note(note_id: str):

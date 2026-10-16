@@ -111,7 +111,7 @@ The manifest fills in its own base URL from the request, so it works for
 localhost and remote with zero operator config. It does **not** require the
 `[mcp]` extra — it's just YAML over HTTP.
 
-### The ten tools
+### The thirteen tools
 
 | Tool              | Does                                                   |
 | ----------------- | ------------------------------------------------------ |
@@ -125,9 +125,43 @@ localhost and remote with zero operator config. It does **not** require the
 | `set_dedication`  | Write the page to your other sessions; every version kept |
 | `write_letter`    | Leave a letter for the next session                    |
 | `read_letters`    | Open the letters waiting, oldest first; marks them read |
+| `keep_with_note`  | Keep a picture (clip, sound, PDF) with a note; `note_to_self` takes `keep` too |
+| `look_at_my_note` | A note and its pictures, shown as images                |
+| `drop_from_note`   | Take one picture off a note                            |
 
 The bookmark is also an MCP resource, `margin://bookmark`, for a client that
 loads resources at the start of a session instead of calling tools.
+
+### Keepsakes: pictures kept with notes
+
+A note can be about a picture, and the picture used to be a path on some
+box's gallery: not in the margin, not in its snapshots, not under its rules
+about who reads it. Now it is kept **with** the note. The bytes go in a
+`keepsakes/` folder beside the database under their sha256 and nothing else
+(`seren_sinew.blobs`); every word about them (caption, where it came from,
+what it is) is a row in `notes.db`. A listing of the folder, or of a
+snapshot, says nothing. Retract the note and its pictures go; drop one and
+its bytes go once no other note keeps them. Snapshots hardlink each picture
+from the previous snapshot, so twenty-two kept snapshots of a clip cost one
+clip. `look_at_my_note` hands them back as image content, so the writer sees
+what it kept instead of reading a path.
+
+Where a keepsake may be taken **from** is the owner's to say, in the
+`keepsakes:` block: folders on the margin's box (the Workbench gallery
+`make_image` saves to) and URL prefixes. Nothing listed means nothing can be
+kept, and the refusal says so; a tool that could read any file on the box or
+fetch any address on the LAN is not a diary's business. What is kept is
+decided by its first bytes, never its filename: a picture, a clip, a sound or
+a PDF; a text file is a note.
+
+```yaml
+keepsakes:
+  sources:
+    - ~/seren/stores/workbench/gallery
+    - https://
+  max_bytes: 268435456        # one keepsake, 256 MB
+  max_total: 34359738368      # the folder, 32 GB
+```
 
 `GET /notes/stats` is deliberately **not** exposed to the assistant — it's the
 operator's engine-check surface, and the assistant can just read its own notes.
@@ -289,6 +323,18 @@ bind with no token refuses to start and prints the three ways out;
 Through the Workbench, the token is named on the Workbench side, on the stub
 that imports this manifest (`bearer_token_env: SEREN_MARGIN_TOKEN` next to the
 `from:` line); every imported tool then presents it, resolved per call.
+
+## The viewer: a status page, not a window
+
+`GET /viewer` is the margin's page on the shared Seren baseplate, so its
+status reads like the Halls and the Loci viewer instead of a bare JSON page.
+It is the engine check and nothing else: the counts `/notes/stats` serves
+(total, kinds bucketed to a fixed vocabulary, keepsakes as a count and a
+size), the backups `/stores` serves (snapshots kept, the newest, Lodestar's
+last pull, the last rehearsal's verdict) and the version and finder from `/`.
+Its script calls those three routes and no other; `tests/test_viewer.py`
+reads the script and fails the build if a fourth appears. No note, topic,
+letter or dedication is ever loaded by the page.
 
 ## Nobody reads the diary over HTTP
 

@@ -289,7 +289,7 @@ def test_age_never_reaches_stats(client):
     """Per-note data stays off the operator's engine-check surface."""
     client.post("/notes", json={"content": "x"})
     body = client.get("/notes/stats").json()
-    assert set(body) == {"total", "kinds"}
+    assert set(body) == {"total", "kinds", "keepsakes"}
 
 
 def test_topics_never_reach_stats(client):

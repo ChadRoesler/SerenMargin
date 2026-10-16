@@ -33,17 +33,21 @@ import re
 import sqlite3
 import time
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional, Union
 
 from ._diag import diag
 from .models import (
     AMEND_SEPARATOR,
+    Keepsake,
     MarginNote,
     NoteStats,
     TopicSummary,
     bucket_kind,
     humanize_age,
 )
+
+if TYPE_CHECKING:
+    from seren_sinew.blobs import BlobStore
 
 
 SCHEMA = """
@@ -65,7 +69,25 @@ CREATE TABLE IF NOT EXISTS dedication (
     set_at      REAL NOT NULL,
     why         TEXT
 );
+-- Pictures kept with notes (seren_margin.keepsakes). The bytes are in the
+-- keepsakes folder under `digest`; this row is every word about them. A
+-- note's rows go when the note goes, and a blob no row names is swept.
+CREATE TABLE IF NOT EXISTS keepsakes (
+    note_id     TEXT NOT NULL,
+    digest      TEXT NOT NULL,
+    bytes       INTEGER NOT NULL,
+    mime        TEXT,
+    caption     TEXT,
+    source      TEXT,
+    kept_at     REAL NOT NULL,
+    PRIMARY KEY (note_id, digest)
+);
+CREATE INDEX IF NOT EXISTS idx_keepsakes_digest ON keepsakes(digest);
 """
+
+# A blob whose row was just written, or is about to be, must survive a sweep
+# that runs in between: nothing younger than this is swept.
+SWEEP_GRACE_SECONDS = 3600.0
 
 # Letters are notes with this kind and a read mark (seren_margin.bookmark).
 LETTER_KIND = "letter"
@@ -154,11 +176,14 @@ def _fts_query(raw: str) -> str:
 
 
 class MarginStore:
-    """Sqlite-backed note store."""
+    """Sqlite-backed note store. `keepsakes` is the blob store the pictures
+    kept with notes live in (seren_sinew.blobs.BlobStore); None = the margin
+    keeps none, and keep() says so."""
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, keepsakes: Optional["BlobStore"] = None):
         self._db_path = db_path
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.keepsakes = keepsakes
         self.has_fts: bool = False
         with self._conn() as conn:
             conn.executescript(SCHEMA)
@@ -281,24 +306,118 @@ class MarginStore:
             conn.commit()
             updated = conn.execute(
                 "SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
-        return _row_to_note(updated)
+            return self._notes(conn, [updated])[0]
 
     def delete(self, note_id: str) -> bool:
         """Hard delete - the one lifecycle control that stays. The writer
         retracts a note when they're done with it; nothing else removes notes.
+        Its keepsake rows go with it, and the bytes nobody names any more.
         """
         with self._conn() as conn:
             cur = conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
             if self.has_fts:
                 conn.execute("DELETE FROM notes_fts WHERE id = ?", (note_id,))
+            dropped = conn.execute("DELETE FROM keepsakes WHERE note_id = ?", (note_id,)).rowcount
             conn.commit()
-            return cur.rowcount > 0
+        if dropped:
+            self.sweep_keepsakes()
+        return cur.rowcount > 0
+
+    # ── keepsakes: pictures kept with notes ────────────────────────────────
+    def keep(self, note_id: str, src: Union[bytes, Path], caption: Optional[str] = None,
+             source: Optional[str] = None) -> Optional[Keepsake]:
+        """Keep a picture with a note: the bytes into the blob store, the row
+        here. None when there is no such note. Raises what the blob store
+        raises (BlobTooLarge, BlobStoreFull) and ValueError for bytes that
+        are not something the margin keeps - before anything is written."""
+        if self.keepsakes is None:
+            raise ValueError("this margin keeps no pictures (keepsakes.enabled is off)")
+        from seren_sinew.blobs import head_of, kind_kept
+        with self._conn() as conn:
+            if conn.execute("SELECT 1 FROM notes WHERE id = ?", (note_id,)).fetchone() is None:
+                return None
+        mime = kind_kept(head_of(src))
+        if mime is None:
+            raise ValueError("not a picture, clip, sound or PDF by its first bytes - a text is a note, "
+                             "and nothing here trusts a filename")
+        blob = self.keepsakes.put(src)
+        k = Keepsake(digest=blob.digest, bytes=blob.bytes, mime=mime, caption=(caption or "").strip() or None,
+                     source=(source or "").strip() or None)
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO keepsakes (note_id, digest, bytes, mime, caption, source, kept_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (note_id, k.digest, k.bytes, k.mime, k.caption, k.source, k.kept_at))
+            conn.commit()
+        return k
+
+    def keepsakes_of(self, note_id: str) -> list[Keepsake]:
+        with self._conn() as conn:
+            rows = conn.execute("SELECT * FROM keepsakes WHERE note_id = ? ORDER BY kept_at, digest",
+                                (note_id,)).fetchall()
+        return [_row_to_keepsake(r) for r in rows]
+
+    def drop_keepsake(self, note_id: str, digest: str) -> bool:
+        """Take one picture off a note. The bytes go too when no other note
+        keeps them. True when the row was there."""
+        with self._conn() as conn:
+            n = conn.execute("DELETE FROM keepsakes WHERE note_id = ? AND digest = ?", (note_id, digest)).rowcount
+            conn.commit()
+        if n:
+            self.sweep_keepsakes()
+        return n > 0
+
+    def referenced_digests(self) -> set[str]:
+        with self._conn() as conn:
+            return {r[0] for r in conn.execute("SELECT DISTINCT digest FROM keepsakes")}
+
+    def sweep_keepsakes(self, grace: float = SWEEP_GRACE_SECONDS) -> list[str]:
+        """Remove the bytes no row names any more (after a grace period, so a
+        picture whose row is on its way is not swept from under it)."""
+        if self.keepsakes is None:
+            return []
+        return self.keepsakes.sweep(self.referenced_digests(), grace=grace)
+
+    def open_keepsake(self, note_id: str, digest: str):
+        """(Keepsake, open file) for one a note keeps, or None. The bytes are
+        only ever handed out through a note that keeps them: a digest alone
+        opens nothing."""
+        if self.keepsakes is None:
+            return None
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM keepsakes WHERE note_id = ? AND digest = ?",
+                               (note_id, digest)).fetchone()
+        if row is None or not self.keepsakes.has(digest):
+            return None
+        return _row_to_keepsake(row), self.keepsakes.open(digest)
+
+    def keepsake_totals(self) -> dict[str, int]:
+        """How many, how big. Content-blind: a count and a size."""
+        with self._conn() as conn:
+            row = conn.execute("SELECT COUNT(*) AS c, COALESCE(SUM(bytes), 0) AS b FROM keepsakes").fetchone()
+        return {"count": int(row["c"]), "bytes": int(row["b"])}
 
     # ── reads ─────────────────────────────────────────────────────────────
     def get(self, note_id: str) -> Optional[MarginNote]:
         with self._conn() as conn:
             row = conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
-        return _row_to_note(row) if row else None
+            return self._notes(conn, [row])[0] if row else None
+
+    def _notes(self, conn: sqlite3.Connection, rows: list) -> list[MarginNote]:
+        """Rows to notes, each with the keepsakes it carries."""
+        notes = [_row_to_note(r) for r in rows]
+        if not notes:
+            return notes
+        by_id: dict[str, list[Keepsake]] = {}
+        ids = [n.id for n in notes]
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            marks = ",".join("?" * len(chunk))
+            for r in conn.execute(f"SELECT * FROM keepsakes WHERE note_id IN ({marks}) ORDER BY kept_at, digest", chunk):
+                by_id.setdefault(r["note_id"], []).append(_row_to_keepsake(r))
+        for n in notes:
+            n.keepsakes = by_id.get(n.id, [])
+        return notes
 
     def list_all(self, limit: int = 200,
                  topic: Optional[str] = None) -> list[MarginNote]:
@@ -318,8 +437,7 @@ class MarginStore:
         sql += " ORDER BY ts DESC LIMIT ?"
         params.append(limit)
         with self._conn() as conn:
-            rows = conn.execute(sql, params).fetchall()
-        return [_row_to_note(r) for r in rows]
+            return self._notes(conn, conn.execute(sql, params).fetchall())
 
     def list_topics(self) -> list[TopicSummary]:
         """Every thread on the board: label, note count, last-touched time.
@@ -387,7 +505,7 @@ class MarginStore:
                     LIMIT ?""",
                 (match, limit),
             ).fetchall()
-        return [_row_to_note(r) for r in rows]
+            return self._notes(conn, rows)
 
     def _search_like(self, query: str, limit: int) -> list[MarginNote]:
         """Substring fallback for a sqlite without FTS5. ANDs the query's tokens
@@ -409,8 +527,7 @@ class MarginStore:
                f"ORDER BY ts DESC LIMIT ?")
         params.append(limit)
         with self._conn() as conn:
-            rows = conn.execute(sql, params).fetchall()
-        return [_row_to_note(r) for r in rows]
+            return self._notes(conn, conn.execute(sql, params).fetchall())
 
     # ── letters and the dedication (seren_margin.bookmark) ────────────────
     def letters(self, unread_only: bool = True, limit: int = 20) -> list[MarginNote]:
@@ -420,8 +537,7 @@ class MarginStore:
             sql += " AND read_at IS NULL"
         sql += " ORDER BY ts ASC LIMIT ?"
         with self._conn() as conn:
-            rows = conn.execute(sql, (LETTER_KIND, limit)).fetchall()
-        return [_row_to_note(r) for r in rows]
+            return self._notes(conn, conn.execute(sql, (LETTER_KIND, limit)).fetchall())
 
     def mark_read(self, ids: list[str]) -> None:
         if not ids:
@@ -489,7 +605,12 @@ class MarginStore:
             b = bucket_kind(r["kind"])
             kinds[b] = kinds.get(b, 0) + r["c"]
 
-        return NoteStats(total=total, kinds=kinds)
+        return NoteStats(total=total, kinds=kinds, keepsakes=self.keepsake_totals())
+
+
+def _row_to_keepsake(row: sqlite3.Row) -> Keepsake:
+    return Keepsake(digest=row["digest"], bytes=row["bytes"], mime=row["mime"], caption=row["caption"],
+                    source=row["source"], kept_at=row["kept_at"])
 
 
 def _row_to_note(row: sqlite3.Row) -> MarginNote:

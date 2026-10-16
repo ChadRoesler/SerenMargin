@@ -135,6 +135,34 @@ def bucket_kind(kind: Optional[str]) -> str:
 AMEND_SEPARATOR = "\n\n--- later ---\n\n"
 
 
+class Keepsake(BaseModel):
+    """A picture (or clip, sound, PDF) kept with a note. The bytes sit in the
+    margin's keepsakes folder under their sha256 and nothing else
+    (seren_sinew.blobs); this row is everything that gives them meaning, and
+    it is as private as the note it hangs on. 15 Oct 2026: the pictures the
+    writer drew used to be paths on another box's gallery - not in the
+    margin, not in its snapshots, not under its rules about who reads them."""
+    digest: str = Field(..., description="sha256 of the bytes; the file's name in the keepsakes folder.")
+    bytes: int
+    mime: Optional[str] = Field(None, description="What it is, from its first bytes - never from a filename.")
+    caption: Optional[str] = Field(None, description="A line about it, if the note is not enough.")
+    source: Optional[str] = Field(None, description="Where it was taken from (a gallery path, a URL).")
+    kept_at: float = Field(default_factory=_now)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def file(self) -> str:
+        """A name to show it under: keepsake-<digest start><ext>. A harness
+        that keeps tool images in a chat (Symposium) picks this up."""
+        from seren_sinew.blobs import file_name
+        return file_name("keepsake", self.digest, self.mime)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def age(self) -> str:
+        return humanize_age(self.kept_at)
+
+
 class MarginNote(BaseModel):
     """A single private note-to-self.
 
@@ -176,6 +204,9 @@ class MarginNote(BaseModel):
 
     id: str = Field(default_factory=_new_id)
     extra: dict[str, Any] = Field(default_factory=dict)
+    keepsakes: list[Keepsake] = Field(
+        default_factory=list,
+        description="Pictures kept with this note - the rows, not the bytes. look_at_my_note shows them.")
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -217,6 +248,14 @@ class NoteAmend(BaseModel):
     addition: str
 
 
+class KeepsakeCreate(BaseModel):
+    """Input shape for POST /notes/{id}/keepsakes: where to take the picture
+    from (a path under keepsakes.sources, or a URL under one of its
+    prefixes), and a line about it."""
+    source: str
+    caption: Optional[str] = None
+
+
 class TopicSummary(BaseModel):
     """One thread on the board: its label, how many notes carry it, and when it
     was last touched. The unit of cheap orientation."""
@@ -251,3 +290,7 @@ class NoteStats(BaseModel):
     """
     total: int
     kinds: dict[str, int] = Field(default_factory=dict)
+    # How many pictures are kept and how much disk they take. A count and a
+    # size say nothing of what a picture shows; a filename would, and there
+    # are none (seren_sinew.blobs names files by their hash).
+    keepsakes: dict[str, int] = Field(default_factory=lambda: {"count": 0, "bytes": 0})

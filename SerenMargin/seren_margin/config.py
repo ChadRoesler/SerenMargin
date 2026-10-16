@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -87,6 +87,28 @@ class BackupConfig(BaseModel):
     restore_from: str = ""
     restore_reason: str = ""
     allow_pull: bool = False
+    # How an archive is compressed when one is handed over: gz (default), xz
+    # (about half the size on a database; pointless on pictures) or none.
+    compress: str = "gz"
+
+
+class KeepsakesConfig(BaseModel):
+    """Pictures (and clips, sounds, PDFs) kept WITH notes, in a folder beside
+    the database (seren_sinew.blobs). A keepsake is as private as the note it
+    hangs on: the folder holds files named by their hash and nothing else,
+    every word about them is a row in notes.db, and the folder is in the
+    same snapshot under the same allow_pull.
+
+    sources: where a keepsake may be taken from. Folders on this box (the
+    Workbench gallery where make_image saves) and URL prefixes
+    ("https://", or one host). Empty = the margin keeps nothing: a tool that
+    could read any file on the box, or fetch any address on the LAN, is not
+    a diary's business, so the owner names the shelves it may reach."""
+    enabled: bool = True
+    dir: str = ""                           # blank = `keepsakes` beside the database
+    max_bytes: int = 256 * 1024 * 1024      # one keepsake
+    max_total: int = 32 * 1024 * 1024 * 1024  # the folder
+    sources: list[Union[str, dict[str, Any]]] = []   # a folder, a URL prefix, or {url, bearer_token | bearer_token_env}
 
 
 class MarginConfig(BaseModel):
@@ -132,6 +154,7 @@ class MarginConfig(BaseModel):
     http_reads: bool = False
     updates: UpdatesConfig = Field(default_factory=UpdatesConfig)
     backup: BackupConfig = Field(default_factory=BackupConfig)
+    keepsakes: KeepsakesConfig = Field(default_factory=KeepsakesConfig)
 
     # REMOVED: notes_days. It configured an auto-expiry sweep that was taken
     # out when the lifecycle was (no pin, no expiry, no done - notes live until
@@ -148,6 +171,11 @@ class MarginConfig(BaseModel):
         if self.backup.dir.strip():
             return Path(self.backup.dir).expanduser().resolve()
         return self.resolved_db_path().resolve().parent / "backups"
+
+    def resolved_keepsakes_dir(self) -> Path:
+        if self.keepsakes.dir.strip():
+            return Path(self.keepsakes.dir).expanduser().resolve()
+        return self.resolved_db_path().resolve().parent / "keepsakes"
 
     def resolve_bearer(self) -> str:
         """The token callers must present, or "" for open. Same resolver
@@ -266,6 +294,17 @@ def load_config(path: Optional[str] = None) -> MarginConfig:
                 diag(f"[seren-margin] config: ignored bad 'backup' block from {yaml_path}: {e}")
         elif backup is not None:
             diag(f"[seren-margin] config: 'backup' in {yaml_path} must be a mapping; ignoring")
+        keepsakes = data.get("keepsakes")
+        if isinstance(keepsakes, dict):
+            try:
+                cfg.keepsakes = KeepsakesConfig(**{k: v for k, v in keepsakes.items() if k in KeepsakesConfig.model_fields})
+                for k in keepsakes:
+                    if k not in KeepsakesConfig.model_fields:
+                        diag(f"[seren-margin] config: ignoring unknown keepsakes key '{k}' from {yaml_path}")
+            except Exception as e:  # noqa: BLE001
+                diag(f"[seren-margin] config: ignored bad 'keepsakes' block from {yaml_path}: {e}")
+        elif keepsakes is not None:
+            diag(f"[seren-margin] config: 'keepsakes' in {yaml_path} must be a mapping; ignoring")
         # NOTE: data.get('tools') is intentionally NOT read here. That section
         # is reserved for a future plug-and-play MCP tool layer, which has its
         # own loader. Same file, different reader, by design.
