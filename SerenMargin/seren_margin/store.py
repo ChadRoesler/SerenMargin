@@ -420,7 +420,7 @@ class MarginStore:
         return notes
 
     def list_all(self, limit: int = 200,
-                 topic: Optional[str] = None) -> list[MarginNote]:
+                 topic: Optional[str] = None, letters: bool = True) -> list[MarginNote]:
         """Notes, newest first. They live until retracted, so there's no
         active/done distinction to filter on - this is the whole board.
 
@@ -428,18 +428,29 @@ class MarginStore:
         surrounding whitespace trimmed, because "Alice" and "alice " are the same
         thread to whoever typed them and a filter that disagrees is just a
         silent empty result.
+
+        `letters=False` leaves the mail out (kind "letter"). Letters are notes
+        underneath, but they are written to the next session, not kept: on
+        18 Oct 2026 they were 100 of 112 rows, and the dozen that were the
+        writer's own were lost among them. letters() is their door.
         """
-        sql = "SELECT * FROM notes"
+        clauses: list = []
         params: list = []
         if topic is not None:
-            sql += " WHERE LOWER(TRIM(COALESCE(topic,''))) = ?"
+            clauses.append("LOWER(TRIM(COALESCE(topic,''))) = ?")
             params.append(topic.strip().lower())
+        if not letters:
+            clauses.append("LOWER(TRIM(COALESCE(kind,''))) != ?")
+            params.append(LETTER_KIND)
+        sql = "SELECT * FROM notes"
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY ts DESC LIMIT ?"
         params.append(limit)
         with self._conn() as conn:
             return self._notes(conn, conn.execute(sql, params).fetchall())
 
-    def list_topics(self) -> list[TopicSummary]:
+    def list_topics(self, letters: bool = True) -> list[TopicSummary]:
         """Every thread on the board: label, note count, last-touched time.
 
         The cheap-orientation surface. Reading the whole board to find out what
@@ -454,16 +465,21 @@ class MarginStore:
 
         Untopiced notes are collected under a single `topic: null` row rather
         than dropped, so the counts always reconcile against /notes/stats.
+        `letters=False` leaves the mail out, as list_all does; letter_counts()
+        then makes up the difference, so they still reconcile.
         """
+        where = "" if letters else "WHERE LOWER(TRIM(COALESCE(kind,''))) != ?"
         with self._conn() as conn:
             rows = conn.execute(
-                """SELECT CASE WHEN TRIM(COALESCE(topic,'')) = '' THEN NULL
-                               ELSE TRIM(topic) END           AS t,
-                          COUNT(*)                            AS c,
-                          MAX(COALESCE(amended_at, ts))       AS latest
-                     FROM notes
-                    GROUP BY t
-                    ORDER BY latest DESC""",
+                f"""SELECT CASE WHEN TRIM(COALESCE(topic,'')) = '' THEN NULL
+                                ELSE TRIM(topic) END           AS t,
+                           COUNT(*)                            AS c,
+                           MAX(COALESCE(amended_at, ts))       AS latest
+                      FROM notes
+                      {where}
+                     GROUP BY t
+                     ORDER BY latest DESC""",
+                () if letters else (LETTER_KIND,),
             ).fetchall()
         return [
             TopicSummary(topic=r["t"], count=r["c"],
@@ -547,6 +563,14 @@ class MarginStore:
             conn.executemany("UPDATE notes SET read_at = ? WHERE id = ? AND read_at IS NULL",
                              [(stamp, i) for i in ids])
             conn.commit()
+
+    def letter_counts(self) -> tuple[int, int]:
+        """(all letters, unread ones) - counts only, no text."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS c, SUM(CASE WHEN read_at IS NULL THEN 1 ELSE 0 END) AS u "
+                "FROM notes WHERE LOWER(TRIM(COALESCE(kind,''))) = ?", (LETTER_KIND,)).fetchone()
+        return int(row["c"]), int(row["u"] or 0)
 
     def unread_letters(self) -> tuple[int, Optional[float]]:
         """(how many, when the oldest was written) - the bookmark's count. No text."""

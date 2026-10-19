@@ -342,9 +342,9 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         return {"ok": True, "id": saved.id}
 
     @app.get("/notes")
-    async def list_notes(limit: int = 100, topic: Optional[str] = None):
+    async def list_notes(limit: int = 100, topic: Optional[str] = None, letters: bool = False):
         _content_over_http()
-        notes = store.list_all(limit=limit, topic=topic or None)
+        notes = store.list_all(limit=limit, topic=topic or None, letters=letters)
         return {
             "entries": [n.model_dump() for n in notes],
             "count": len(notes),
@@ -375,9 +375,11 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         hat. It stays off /notes/stats for exactly that reason.
         """
         _content_over_http()
-        topics = store.list_topics()
+        topics = store.list_topics(letters=False)
+        count, unread = store.letter_counts()
         return {"count": len(topics),
-                "topics": [t.model_dump() for t in topics]}
+                "topics": [t.model_dump() for t in topics],
+                "letters": {"count": count, "unread": unread}}
     @app.get("/notes/search")
     async def search_notes(q: str, limit: int = 20):
         """Full-text search over content + topic.

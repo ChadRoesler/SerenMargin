@@ -235,11 +235,15 @@ class MarginToolImpl:
 
     # -- read (recency) ---------------------------------------------------
     def list_my_notes(self, limit: int = 50,
-                      topic: Optional[str] = None) -> dict:
+                      topic: Optional[str] = None,
+                      include_letters: bool = False) -> dict:
         """Read your notes back, newest first.
 
         The whole board - there's no active/done split, because notes here
-        aren't tasks. Everything you've written and not retracted is here.
+        aren't tasks. Everything you've written and not retracted is here,
+        except letters: those are mail to the next session, not notes you
+        keep, and they have their own door (read_letters, include_read=True
+        for old ones). `include_letters=True` puts them back on the board.
 
         Pass `topic` to pull a single thread instead of the whole board. Get
         the available labels from `list_my_topics`; matching ignores case and
@@ -254,7 +258,7 @@ class MarginToolImpl:
         Every note comes back with `age` in plain words ("3 days ago") as well
         as the raw `ts`, and `amended_age` if you've added to it since.
         """
-        notes = self.store.list_all(limit=limit, topic=topic)
+        notes = self.store.list_all(limit=limit, topic=topic, letters=include_letters)
         return {
             "count": len(notes),
             "topic": topic,
@@ -276,12 +280,16 @@ class MarginToolImpl:
         looking for. This needs neither. Pick a thread, then pull it with
         `list_my_notes(topic=...)`.
 
-        Untopiced notes come back as a single row with `topic: null`.
+        Untopiced notes come back as a single row with `topic: null`. Letters
+        are not a thread: they are counted on their own line, `letters`
+        (how many, how many unread), and read_letters opens them.
         """
-        topics = self.store.list_topics()
+        topics = self.store.list_topics(letters=False)
+        count, unread = self.store.letter_counts()
         return {
             "count": len(topics),
             "topics": [t.model_dump() for t in topics],
+            "letters": {"count": count, "unread": unread},
         }
 
     # -- read (search) ----------------------------------------------------

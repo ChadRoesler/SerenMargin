@@ -106,7 +106,10 @@ tools:
       Read your notes back, newest first.
 
       The whole board - there's no active/done split, because notes here
-      aren't tasks. Everything you've written and not retracted is here.
+      aren't tasks. Everything you've written and not retracted is here,
+      except letters: those are mail to the next session, not notes you
+      keep, and they have their own door (read_letters, include_read=true
+      for old ones). include_letters=true puts them back on the board.
 
       Pass `topic` to pull a single thread instead of the whole board. Get
       the available labels from list_my_topics; matching ignores case and
@@ -124,10 +127,12 @@ tools:
       kind: web
       method: GET
       # Same query-string caveat as search_my_notes below.
-      path: /notes?topic={topic}
+      path: /notes?topic={topic}&letters={include_letters}
     parameters:
       - { name: topic, type: string, required: false, default: "",
           description: "Narrow to one thread. Empty means the whole board." }
+      - { name: include_letters, type: boolean, required: false, default: false,
+          description: "true puts letters (mail between sessions) back on the board." }
 
   # ─── 3. READ (orientation) ────────────────────────────────────────────
   - name: list_my_topics
@@ -145,7 +150,9 @@ tools:
       looking for. This needs neither. Pick a thread, then pull it with
       list_my_notes(topic=...).
 
-      Untopiced notes come back as a single row with `topic: null`.
+      Untopiced notes come back as a single row with `topic: null`. Letters
+      are not a thread: they are counted on their own line, `letters` (how
+      many, how many unread), and read_letters opens them.
     invoke:
       kind: web
       method: GET
