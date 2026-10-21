@@ -86,11 +86,11 @@ def test_list_my_notes_respects_limit(impl):
 # ── search_my_notes ─────────────────────────────────────────────────────────
 
 def test_search_my_notes_finds_by_word(impl):
-    impl.note_to_self("the Behemoth sits over the collarbone", topic="alice")
+    impl.note_to_self("the kettle sits on the back burner", topic="alice")
     impl.note_to_self("unrelated thought about dice colors")
-    r = impl.search_my_notes("collarbone")
+    r = impl.search_my_notes("burner")
     assert r["count"] == 1
-    assert "Behemoth" in r["notes"][0]["content"]
+    assert "kettle" in r["notes"][0]["content"]
 
 
 def test_search_my_notes_reports_finder(impl):

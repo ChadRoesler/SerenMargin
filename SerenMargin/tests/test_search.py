@@ -24,7 +24,7 @@ def store(tmp_path):
 
 def _seed(store: MarginStore) -> None:
     store.add(MarginNote(
-        content="the user mentioned the Kraken tattoo sits over the collarbone",
+        content="the user mentioned the kraken poster sits over the mantel",
         topic="user", kind="observation"))
     store.add(MarginNote(
         content="the consolidator redraft budget feels too tight at 3",
@@ -126,7 +126,7 @@ def test_query_operators_in_text_do_not_blow_up(store):
 
 def test_fts_query_short_query_ands_raw_tokens():
     """<=3 tokens is deliberate; every word is required, stopwords included."""
-    assert _fts_query("kraken tattoo") == '"kraken" "tattoo"'
+    assert _fts_query("kraken poster") == '"kraken" "poster"'
     assert _fts_query("the redraft budget") == '"the" "redraft" "budget"'
 
 
