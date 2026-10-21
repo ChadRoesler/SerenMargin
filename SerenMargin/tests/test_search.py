@@ -24,7 +24,7 @@ def store(tmp_path):
 
 def _seed(store: MarginStore) -> None:
     store.add(MarginNote(
-        content="the user mentioned the kraken poster sits over the mantel",
+        content="the user mentioned the Kraken poster sits over the mantel",
         topic="user", kind="observation"))
     store.add(MarginNote(
         content="the consolidator redraft budget feels too tight at 3",
@@ -47,7 +47,7 @@ def test_fts_is_available_in_this_environment(store):
 
 def test_search_finds_by_content_word(store):
     _seed(store)
-    hits, finder = store.search("collarbone")
+    hits, finder = store.search("mantel")
     assert finder == "fts"
     assert len(hits) == 1
     assert "Kraken" in hits[0].content
@@ -163,7 +163,7 @@ def test_like_fallback_returns_results(store, monkeypatch):
     """Force the no-FTS5 path and prove it still answers correctly."""
     _seed(store)
     monkeypatch.setattr(store, "has_fts", False)
-    hits, finder = store.search("collarbone")
+    hits, finder = store.search("mantel")
     assert finder == "like"
     assert len(hits) == 1
     assert "Kraken" in hits[0].content
@@ -173,7 +173,7 @@ def test_like_fallback_ands_tokens(store, monkeypatch):
     _seed(store)
     monkeypatch.setattr(store, "has_fts", False)
     # Both tokens present in one note -> hit.
-    assert store.search("Kraken collarbone")[0]
+    assert store.search("Kraken mantel")[0]
     # Tokens from two different notes -> no single note has both.
     assert store.search("Kraken Tabletop")[0] == []
 
