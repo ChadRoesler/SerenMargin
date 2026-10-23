@@ -13,6 +13,12 @@ book this margin is written in:
     letters     - notes addressed to the next session - from a woken run to
                   the awake one and back. Notes with kind "letter" and a read
                   mark, so search, amend and retract work on them unchanged.
+    preface     - the page written to the ROOM, not to the other sessions:
+                  what a harness reads to the model as its system prompt
+                  (Symposium's claude voice, 21 Oct 2026). Versioned like the
+                  dedication and kept apart from it: the dedication says who
+                  you are, the preface says how this room works and how to be
+                  in it. GET /preface serves it; it is not in the bookmark.
 
 THE ONE RULE THIS BENDS, AND WHY IT STILL HOLDS. Margin's tools say there is
 "no auto-surface, no relevance hook ... The choosing is the point. A margin
@@ -39,6 +45,9 @@ from .models import humanize_age
 from .store import MarginStore
 
 DEDICATION_MAX_CHARS = 2000
+# The preface replaces a harness's own system prompt, so it has room to say
+# how the harness works; still a page, not a manual.
+PREFACE_MAX_CHARS = 8000
 
 
 def build_bookmark(store: MarginStore) -> dict[str, Any]:
@@ -64,4 +73,17 @@ def build_bookmark(store: MarginStore) -> dict[str, Any]:
         "unread_letters": unread,
         "oldest_unread_age": humanize_age(oldest) if oldest else None,
         "text": "\n".join(lines),
+    }
+
+
+def build_preface(store: MarginStore) -> dict[str, Any]:
+    """The preface as a harness reads it: the page, its version and age, and
+    `text`, the page alone (empty when none is written, so a harness can
+    fall back to its own prompt without parsing anything)."""
+    page = store.preface()
+    return {
+        "preface": page,
+        "version": page["version"] if page else 0,
+        "age": humanize_age(page["set_at"]) if page else None,
+        "text": page["text"] if page else "",
     }

@@ -24,7 +24,7 @@ from seren_margin.config import MarginConfig
 SECRET = "the thing I have not told anyone yet"
 ALLOWED = {"/", "/notes/stats", "/stores"}
 NEVER = ("/notes/search", "/notes/topics", "/notes?", "/notes/{", "/letters", "/bookmark", "/dedication",
-         "/keepsakes", "/mcp")
+         "/preface", "/keepsakes", "/mcp")
 
 
 def _calls(script: str) -> set[str]:

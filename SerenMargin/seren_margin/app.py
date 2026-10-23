@@ -14,6 +14,8 @@ Endpoints:
     DELETE /notes/{id}        - retract (hard delete)
     GET    /bookmark          - the dedication + a COUNT of unread letters (never text)
     PUT    /dedication        - a new version of the dedication (never overwrites)
+    GET    /preface           - the page a harness reads to the model as its system prompt
+    PUT    /preface           - a new version of the preface (never overwrites)
     POST   /letters           - a letter to the next session
     POST   /letters/read      - open unread letters, oldest first; marks them read *
     POST   /notes/{id}/keepsakes          - keep a picture with a note (seren_margin.keepsakes)
@@ -47,7 +49,7 @@ TWO WAYS TO REACH THE TOOLS, both first-class:
     2. Standalone path - `pip install seren-margin[mcp]` mounts a real MCP
        endpoint at /mcp on this same process, so a client can connect directly
        with nothing else deployed.
-Same thirteen tools either way, defined once in seren_margin.mcp.tools.
+Same fifteen tools either way, defined once in seren_margin.mcp.tools.
 
 AUTH, IF YOU WANT IT. With no token configured (the default) every route is
 open and the loopback bind is the whole guard - the way it has always been.
@@ -73,7 +75,7 @@ from importlib.resources import files
 from importlib.metadata import version as pkg_version, PackageNotFoundError
 
 
-from .bookmark import DEDICATION_MAX_CHARS, build_bookmark
+from .bookmark import DEDICATION_MAX_CHARS, PREFACE_MAX_CHARS, build_bookmark, build_preface
 from .config import MarginConfig, load_config
 from .models import DedicationSet, KeepsakeCreate, LetterCreate, MarginNote, NoteAmend, NoteCreate, NoteStats
 from .store import LETTER_KIND, MarginStore
@@ -430,6 +432,28 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         if len(text) > DEDICATION_MAX_CHARS:
             raise HTTPException(400, f"{len(text)} characters; the dedication is capped at {DEDICATION_MAX_CHARS}")
         entry, changed = store.set_dedication(text, body.why)
+        return {"ok": True, "version": entry["version"], "changed": changed}
+
+    @app.get("/preface")
+    async def get_preface(format: Optional[str] = None):
+        """The preface: the page a harness reads to the model as its system
+        prompt (seren_margin.bookmark). Served whatever http_reads says, like
+        the bookmark: it is written to be read at the door, by the room.
+        ?format=text gives the page alone, empty when none is written."""
+        pf = build_preface(store)
+        if format == "text":
+            return Response(content=pf["text"] + ("\n" if pf["text"] else ""),
+                            media_type="text/plain; charset=utf-8")
+        return pf
+
+    @app.put("/preface")
+    async def put_preface(body: DedicationSet = Body(...)):
+        text = (body.text or "").strip()
+        if not text:
+            raise HTTPException(400, "text must not be empty")
+        if len(text) > PREFACE_MAX_CHARS:
+            raise HTTPException(400, f"{len(text)} characters; the preface is capped at {PREFACE_MAX_CHARS}")
+        entry, changed = store.set_preface(text, body.why)
         return {"ok": True, "version": entry["version"], "changed": changed}
 
     @app.post("/letters")

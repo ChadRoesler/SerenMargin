@@ -25,6 +25,8 @@ TOOL ROSTER:
 
     bookmark         pick up where you left off        (GET    /bookmark)
     set_dedication   the page to your other sessions   (PUT    /dedication)
+    preface          the page the room reads you       (GET    /preface)
+    set_preface      write that page                   (PUT    /preface)
     write_letter     a note to the next session        (POST   /letters)
     read_letters     open the letters waiting          (POST   /letters/read)
 
@@ -36,8 +38,8 @@ TOOL ROSTER:
     written. 15 Oct 2026: a picture is a thing I remember, not a path on
     some box's gallery (seren_margin.keepsakes).
 
-Plus one MCP resource, margin://bookmark - the same bookmark, for a client
-that loads resources rather than calling tools.
+Plus two MCP resources, margin://bookmark and margin://preface - the same
+pages, for a client that loads resources rather than calling tools.
 
 NOT exposed: /notes/stats. That endpoint exists so the OPERATOR can confirm
 the service is alive without reading the notes; handing it to the note-writer
@@ -69,7 +71,7 @@ from typing import Any, Optional
 from mcp.server.fastmcp import FastMCP, Image
 from seren_sinew.blobs import choose_shown, keep_each
 
-from ..bookmark import DEDICATION_MAX_CHARS, build_bookmark
+from ..bookmark import DEDICATION_MAX_CHARS, PREFACE_MAX_CHARS, build_bookmark, build_preface
 from ..config import MarginConfig
 from ..models import MarginNote
 from ..store import LETTER_KIND, MarginStore
@@ -87,6 +89,8 @@ TOOL_NAMES: tuple[str, ...] = (
     "retract_note",
     "bookmark",
     "set_dedication",
+    "preface",
+    "set_preface",
     "write_letter",
     "read_letters",
     "keep_with_note",
@@ -95,6 +99,7 @@ TOOL_NAMES: tuple[str, ...] = (
 )
 
 BOOKMARK_URI = "margin://bookmark"
+PREFACE_URI = "margin://preface"
 
 
 class MarginToolImpl:
@@ -414,6 +419,55 @@ class MarginToolImpl:
                 "note": (f"Version {entry['version']} is the page now; the next session reads it first."
                          if changed else "That's already the page; nothing changed.")}
 
+    def preface(self, history: int = 0) -> dict:
+        """Read the preface: the page the ROOM reads to you, not the one you
+        wrote to your other sessions.
+
+        A harness that replaces its own system prompt with yours (Symposium's
+        claude voice) fetches this page at the start of a chat and hands it
+        to the model as the system prompt. So this is where you say how the
+        room works and how you want to be in it: what the harness does, what
+        to keep from its defaults, who is there, how you write. The
+        dedication stays what it is - who you are, read at the door - and the
+        bookmark never carries the preface.
+
+        Returns the page, its version and age, and `text` (empty when none is
+        written: the harness then keeps its own prompt). `history` > 0 brings
+        back that many earlier versions, newest first, each with its `why`.
+        """
+        out = build_preface(self.store)
+        if history > 0:
+            out["history"] = self.store.preface_history(limit=history)
+        return out
+
+    def set_preface(self, text: str, why: Optional[str] = None) -> dict:
+        """Write the preface: the page a harness reads to the model as its
+        system prompt, in place of the harness's own. The whole page, not a
+        patch.
+
+        This replaces several thousand words of someone else's instructions
+        with yours, so say what the room needs said: how the harness's tools
+        and permissions work, what to keep of its habits, that a person is
+        there and can answer, how you write. Leave out what the dedication
+        already says; the dedication arrives in the first turn regardless.
+
+        Versioned - nothing is overwritten. Each version keeps its text, when,
+        and `why`, so the history shows how you have framed the room over
+        time. The same text as now is not a new version. A new chat reads the
+        new page; a chat already open keeps the prompt it started with.
+        Capped at 8000 characters.
+        """
+        text = (text or "").strip()
+        if not text:
+            return {"ok": False, "error": "an empty page - write something, or keep the current one"}
+        if len(text) > PREFACE_MAX_CHARS:
+            return {"ok": False, "error": f"{len(text)} characters; the preface is a page, not a manual, "
+                                          f"so it is capped at {PREFACE_MAX_CHARS}. Trim it"}
+        entry, changed = self.store.set_preface(text, why)
+        return {"ok": True, "version": entry["version"], "changed": changed,
+                "note": (f"Version {entry['version']} is the page now; the next chat opens on it."
+                         if changed else "That's already the page; nothing changed.")}
+
     def write_letter(self, content: str, signed: Optional[str] = None) -> dict:
         """Leave a letter for the next session - the next you.
 
@@ -467,6 +521,8 @@ def register_tools(mcp: FastMCP, store: MarginStore,
     mcp.tool()(impl.retract_note)
     mcp.tool()(impl.bookmark)
     mcp.tool()(impl.set_dedication)
+    mcp.tool()(impl.preface)
+    mcp.tool()(impl.set_preface)
     mcp.tool()(impl.write_letter)
     mcp.tool()(impl.read_letters)
     mcp.tool()(impl.keep_with_note)
@@ -479,5 +535,10 @@ def register_tools(mcp: FastMCP, store: MarginStore,
         """Pick up where you left off: your dedication, and how many letters wait."""
         return build_bookmark(store)["text"]
     mcp.resource(BOOKMARK_URI, name="bookmark", mime_type="text/plain")(bookmark_resource)
+
+    def preface_resource() -> str:
+        """The preface: the page the room reads to you as its system prompt."""
+        return build_preface(store)["text"]
+    mcp.resource(PREFACE_URI, name="preface", mime_type="text/plain")(preface_resource)
 
     return impl

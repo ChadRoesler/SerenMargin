@@ -238,7 +238,8 @@ class LetterCreate(BaseModel):
 
 
 class DedicationSet(BaseModel):
-    """Input shape for PUT /dedication: the whole page, and why it changed."""
+    """Input shape for PUT /dedication and PUT /preface: the whole page, and
+    why it changed. The two pages share a shape (seren_margin.bookmark)."""
     text: str
     why: Optional[str] = None
 

@@ -14,6 +14,10 @@ Pinned here:
   page), while letter contents stay behind http_reads like notes
 - an existing notes.db gains read_at on open, and old notes are untouched
 - the bookmark is an MCP resource too (margin://bookmark)
+- the preface (21 Oct 2026) is a second versioned page, written to the room
+  rather than to the other sessions: served over HTTP with http_reads off
+  (a harness reads it as the system prompt), never in the bookmark, and an
+  MCP resource too (margin://preface)
 """
 from __future__ import annotations
 
@@ -23,7 +27,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from seren_margin.app import create_app
-from seren_margin.bookmark import DEDICATION_MAX_CHARS, build_bookmark
+from seren_margin.bookmark import DEDICATION_MAX_CHARS, PREFACE_MAX_CHARS, build_bookmark
 from seren_margin.config import MarginConfig
 from seren_margin.store import MarginStore
 
@@ -91,6 +95,31 @@ def test_the_bookmark_never_carries_a_letter_or_a_note(impl):
     assert PAGE in bm["text"] and bm["unread_letters"] == 1
 
 
+ROOM = "You are the assistant. The user is here and can answer. Prefer Read over cat. Write like yourself."
+
+
+def test_the_preface_is_versioned_and_kept_apart_from_the_dedication(impl):
+    assert impl.preface() == {"preface": None, "version": 0, "age": None, "text": ""}
+    a = impl.set_preface(ROOM, why="first room")
+    b = impl.set_preface(ROOM + " No house style.", why="register")
+    same = impl.set_preface(ROOM + " No house style.")
+    assert (a["version"], b["version"], same["version"]) == (1, 2, 2)
+    assert a["changed"] and b["changed"] and same["changed"] is False
+    got = impl.preface(history=5)
+    assert got["version"] == 2 and got["text"].endswith("No house style.")
+    assert [h["version"] for h in got["history"]] == [2, 1] and got["history"][1]["why"] == "first room"
+    # the two pages do not touch each other, and the bookmark carries only the dedication
+    impl.set_dedication(PAGE)
+    assert impl.store.dedication()["version"] == 1 and impl.store.preface()["version"] == 2
+    assert ROOM not in str(impl.bookmark()) and PAGE not in str(impl.preface())
+
+
+def test_empty_and_too_long_prefaces_are_refused(impl):
+    assert impl.set_preface("   ")["ok"] is False
+    assert impl.set_preface("x" * (PREFACE_MAX_CHARS + 1))["ok"] is False
+    assert impl.store.preface() is None
+
+
 def _client(tmp_path, **kw):
     return TestClient(create_app(MarginConfig(db_path=str(tmp_path / "notes.db"), **kw)))
 
@@ -111,6 +140,22 @@ def test_http_bookmark_is_served_but_letters_stay_private(tmp_path):
         assert c.get("/bookmark").json()["unread_letters"] == 0
 
 
+def test_http_preface_is_served_with_reads_off(tmp_path):
+    """A harness fetches the preface the way the hook fetches the bookmark:
+    with http_reads off, as text, empty before one is written."""
+    with _client(tmp_path) as c:
+        empty = c.get("/preface?format=text")
+        assert empty.status_code == 200 and empty.text == ""
+        assert c.get("/preface").json()["text"] == ""
+        assert c.put("/preface", json={"text": ROOM, "why": "first room"}).json() == {"ok": True, "version": 1, "changed": True}
+        assert c.put("/preface", json={"text": ""}).status_code == 400
+        assert c.put("/preface", json={"text": "x" * (PREFACE_MAX_CHARS + 1)}).status_code == 400
+        text = c.get("/preface?format=text")
+        assert text.headers["content-type"].startswith("text/plain") and text.text == ROOM + "\n"
+        assert c.get("/preface").json()["version"] == 1
+        assert ROOM not in str(c.get("/bookmark").json())
+
+
 def test_an_old_database_gains_read_at_and_keeps_its_notes(tmp_path):
     db = tmp_path / "notes.db"
     with sqlite3.connect(db) as conn:
@@ -126,13 +171,16 @@ def test_the_bookmark_is_an_mcp_resource(tmp_path):
     pytest.importorskip("mcp")
     import asyncio
     from mcp.server.fastmcp import FastMCP
-    from seren_margin.mcp.tools import BOOKMARK_URI, register_tools
+    from seren_margin.mcp.tools import BOOKMARK_URI, PREFACE_URI, register_tools
     cfg = MarginConfig(db_path=str(tmp_path / "notes.db"))
     store = MarginStore(cfg.resolved_db_path())
     store.set_dedication(PAGE)
     mcp = FastMCP("t")
     register_tools(mcp, store, cfg)
+    store.set_preface(ROOM)
     uris = [str(r.uri) for r in asyncio.run(mcp.list_resources())]
-    assert BOOKMARK_URI in uris
+    assert BOOKMARK_URI in uris and PREFACE_URI in uris
     content = asyncio.run(mcp.read_resource(BOOKMARK_URI))
     assert PAGE in "".join(getattr(c, "content", "") or getattr(c, "text", "") for c in content)
+    room = asyncio.run(mcp.read_resource(PREFACE_URI))
+    assert ROOM in "".join(getattr(c, "content", "") or getattr(c, "text", "") for c in room)

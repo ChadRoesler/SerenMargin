@@ -111,7 +111,7 @@ The manifest fills in its own base URL from the request, so it works for
 localhost and remote with zero operator config. It does **not** require the
 `[mcp]` extra — it's just YAML over HTTP.
 
-### The thirteen tools
+### The fifteen tools
 
 | Tool              | Does                                                   |
 | ----------------- | ------------------------------------------------------ |

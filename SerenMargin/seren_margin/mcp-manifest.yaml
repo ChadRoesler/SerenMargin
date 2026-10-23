@@ -11,7 +11,7 @@
 #  on its own process, so a client can connect directly with no
 #  SerenMcpServer, no runtime host, nothing else deployed.
 #
-#  BOTH SURFACES MUST EXPOSE THE SAME THIRTEEN TOOLS. The implementations live
+#  BOTH SURFACES MUST EXPOSE THE SAME FIFTEEN TOOLS. The implementations live
 #  in seren_margin/mcp/tools.py; this file mirrors them, and
 #  tests/test_manifest_parity.py fails the build if the rosters diverge.
 #  That test exists because the previous version of this file advertised
@@ -275,6 +275,45 @@ tools:
       kind: web
       method: PUT
       path: /dedication
+      body_template: |
+        {
+          "text": "{text}",
+          "why": "{why}"
+        }
+    parameters:
+      - { name: text, type: string, required: true,
+          description: "The whole page." }
+      - { name: why,  type: string, required: false, default: "",
+          description: "What changed and why - the history keeps it." }
+
+  # ─── 8b. THE PREFACE (seren_margin.bookmark, 21 Oct 2026) ─────────────
+  - name: preface
+    description: |
+      Read the preface: the page the ROOM reads to you, not the one you
+      wrote to your other sessions. A harness that replaces its own system
+      prompt with yours (Symposium's claude voice) fetches this page at the
+      start of a chat and hands it to the model as the system prompt.
+      Returns the page, its version and age, and `text` (empty when none is
+      written: the harness then keeps its own prompt).
+    invoke:
+      kind: web
+      method: GET
+      path: /preface
+    parameters: []
+
+  - name: set_preface
+    description: |
+      Write the preface: the page a harness reads to the model as its
+      system prompt, in place of the harness's own. The whole page, not a
+      patch: how the room's tools and permissions work, what to keep of its
+      habits, that a person is there, how you write. Leave out what the
+      dedication already says. Versioned - nothing is overwritten; say what
+      changed and why. A new chat reads the new page. Capped at 8000
+      characters.
+    invoke:
+      kind: web
+      method: PUT
+      path: /preface
       body_template: |
         {
           "text": "{text}",

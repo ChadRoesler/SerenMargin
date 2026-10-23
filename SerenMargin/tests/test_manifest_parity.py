@@ -58,14 +58,16 @@ def test_roster_matches_the_implementation(manifest):
     assert set(_tools(manifest)) == set(TOOL_NAMES)
 
 
-def test_manifest_advertises_exactly_the_thirteen_tools(manifest):
+def test_manifest_advertises_exactly_the_fifteen_tools(manifest):
     """Belt to the above, and runs without the mcp extra installed. Six for
     the notes, four for the bookmark, the dedication and letters (29 Sept
-    2026), three for the pictures kept with notes (15 Oct 2026)."""
+    2026), three for the pictures kept with notes (15 Oct 2026), two for
+    the preface (21 Oct 2026)."""
     assert set(_tools(manifest)) == {
         "note_to_self", "list_my_notes", "list_my_topics",
         "search_my_notes", "amend_note", "retract_note",
-        "bookmark", "set_dedication", "write_letter", "read_letters",
+        "bookmark", "set_dedication", "preface", "set_preface",
+        "write_letter", "read_letters",
         "keep_with_note", "look_at_my_note", "drop_from_note"}
 
 

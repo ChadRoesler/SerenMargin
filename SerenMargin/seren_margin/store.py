@@ -69,6 +69,15 @@ CREATE TABLE IF NOT EXISTS dedication (
     set_at      REAL NOT NULL,
     why         TEXT
 );
+-- The preface (seren_margin.bookmark): the page a harness reads to the
+-- model as its system prompt. Same shape as the dedication, kept apart:
+-- the dedication is written to the other sessions, the preface to the room.
+CREATE TABLE IF NOT EXISTS preface (
+    version     INTEGER PRIMARY KEY,
+    text        TEXT NOT NULL,
+    set_at      REAL NOT NULL,
+    why         TEXT
+);
 -- Pictures kept with notes (seren_margin.keepsakes). The bytes are in the
 -- keepsakes folder under `digest`; this row is every word about them. A
 -- note's rows go when the note goes, and a blob no row names is swept.
@@ -91,6 +100,9 @@ SWEEP_GRACE_SECONDS = 3600.0
 
 # Letters are notes with this kind and a read mark (seren_margin.bookmark).
 LETTER_KIND = "letter"
+
+# The versioned pages, each its own table of one shape (seren_margin.bookmark).
+PAGES = ("dedication", "preface")
 
 # Columns added after v0.1.0 shipped. Applied by _migrate() as idempotent
 # ALTER TABLE ADD COLUMNs.
@@ -581,31 +593,54 @@ class MarginStore:
                 (LETTER_KIND,)).fetchone()
         return int(row["c"]), row["oldest"]
 
-    def dedication(self) -> Optional[dict]:
+    # The versioned pages. Each is one table of the same shape; the name is
+    # checked against PAGES so a caller can never name an arbitrary table.
+    def _page(self, table: str) -> Optional[dict]:
+        assert table in PAGES, table
         with self._conn() as conn:
-            row = conn.execute("SELECT * FROM dedication ORDER BY version DESC LIMIT 1").fetchone()
+            row = conn.execute(f"SELECT * FROM {table} ORDER BY version DESC LIMIT 1").fetchone()
         return dict(row) if row else None
 
-    def dedication_history(self, limit: int = 10) -> list[dict]:
+    def _page_history(self, table: str, limit: int = 10) -> list[dict]:
+        assert table in PAGES, table
         with self._conn() as conn:
-            rows = conn.execute("SELECT * FROM dedication ORDER BY version DESC LIMIT ?",
+            rows = conn.execute(f"SELECT * FROM {table} ORDER BY version DESC LIMIT ?",
                                 (limit,)).fetchall()
         return [dict(r) for r in rows]
 
-    def set_dedication(self, text: str, why: Optional[str] = None) -> tuple[dict, bool]:
+    def _set_page(self, table: str, text: str, why: Optional[str] = None) -> tuple[dict, bool]:
         """A new version, never an overwrite. The same text as now is not a new
         version. Returns (the version, whether it changed)."""
+        assert table in PAGES, table
         with self._conn() as conn:
-            cur = conn.execute("SELECT * FROM dedication ORDER BY version DESC LIMIT 1").fetchone()
+            cur = conn.execute(f"SELECT * FROM {table} ORDER BY version DESC LIMIT 1").fetchone()
             if cur is not None and cur["text"] == text:
                 return dict(cur), False
             version = (cur["version"] + 1) if cur is not None else 1
             entry = {"version": version, "text": text, "set_at": time.time(),
                      "why": (why or "").strip()[:500] or None}
-            conn.execute("INSERT INTO dedication (version, text, set_at, why) VALUES (?, ?, ?, ?)",
+            conn.execute(f"INSERT INTO {table} (version, text, set_at, why) VALUES (?, ?, ?, ?)",
                          (entry["version"], entry["text"], entry["set_at"], entry["why"]))
             conn.commit()
         return entry, True
+
+    def dedication(self) -> Optional[dict]:
+        return self._page("dedication")
+
+    def dedication_history(self, limit: int = 10) -> list[dict]:
+        return self._page_history("dedication", limit)
+
+    def set_dedication(self, text: str, why: Optional[str] = None) -> tuple[dict, bool]:
+        return self._set_page("dedication", text, why)
+
+    def preface(self) -> Optional[dict]:
+        return self._page("preface")
+
+    def preface_history(self, limit: int = 10) -> list[dict]:
+        return self._page_history("preface", limit)
+
+    def set_preface(self, text: str, why: Optional[str] = None) -> tuple[dict, bool]:
+        return self._set_page("preface", text, why)
 
     # ── stats (content-blind) ─────────────────────────────────────────────
     def stats(self) -> NoteStats:
