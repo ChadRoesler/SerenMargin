@@ -154,16 +154,16 @@ def test_stats_is_not_on_the_ai_surface():
 def test_list_my_topics_tool(impl):
     impl.note_to_self("a", topic="alice")
     impl.note_to_self("b", topic="alice")
-    impl.note_to_self("c", topic="rhys")
+    impl.note_to_self("c", topic="bob")
     r = impl.list_my_topics()
     assert r["count"] == 2
-    assert {t["topic"]: t["count"] for t in r["topics"]} == {"alice": 2, "rhys": 1}
+    assert {t["topic"]: t["count"] for t in r["topics"]} == {"alice": 2, "bob": 1}
     assert all(t["latest_age"] for t in r["topics"])
 
 
 def test_list_my_notes_topic_filter(impl):
     impl.note_to_self("a", topic="alice")
-    impl.note_to_self("b", topic="rhys")
+    impl.note_to_self("b", topic="bob")
     r = impl.list_my_notes(topic="alice")
     assert r["count"] == 1 and r["topic"] == "alice"
 

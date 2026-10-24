@@ -31,7 +31,7 @@ def _seed(store: MarginStore) -> None:
         topic="serenmemory", kind="question"))
     store.add(MarginNote(
         content="ask about the Tabletop Simulator port when he's rested",
-        topic="superdudebros", kind="reminder"))
+        topic="dicerace", kind="reminder"))
     store.add(MarginNote(
         content="he underclaims his own intelligence as a setup to the swing",
         topic="alice", kind="observation"))
@@ -55,7 +55,7 @@ def test_search_finds_by_content_word(store):
 
 def test_search_finds_by_topic(store):
     _seed(store)
-    hits, _ = store.search("superdudebros")
+    hits, _ = store.search("dicerace")
     assert len(hits) == 1
     assert "Tabletop" in hits[0].content
 

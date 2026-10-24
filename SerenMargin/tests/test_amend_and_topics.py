@@ -222,10 +222,10 @@ def test_amendment_makes_a_thread_look_live(store):
 
 
 def test_topics_route(client):
-    client.post("/notes", json={"content": "a", "topic": "rhys"})
+    client.post("/notes", json={"content": "a", "topic": "bob"})
     r = client.get("/notes/topics")
     assert r.status_code == 200
-    assert r.json()["topics"][0]["topic"] == "rhys"
+    assert r.json()["topics"][0]["topic"] == "bob"
     assert r.json()["topics"][0]["latest_age"]
 
 
@@ -239,7 +239,7 @@ def test_topics_route_not_shadowed_by_the_id_route(client):
 
 def test_list_all_filters_by_topic(store):
     store.add(MarginNote(content="a", topic="alice"))
-    store.add(MarginNote(content="b", topic="rhys"))
+    store.add(MarginNote(content="b", topic="bob"))
     assert [n.content for n in store.list_all(topic="alice")] == ["a"]
 
 
@@ -258,7 +258,7 @@ def test_topic_filter_miss_is_empty(store):
 
 def test_topic_filter_route(client):
     client.post("/notes", json={"content": "a", "topic": "alice"})
-    client.post("/notes", json={"content": "b", "topic": "rhys"})
+    client.post("/notes", json={"content": "b", "topic": "bob"})
     assert client.get("/notes", params={"topic": "alice"}).json()["count"] == 1
     assert client.get("/notes").json()["count"] == 2
 
