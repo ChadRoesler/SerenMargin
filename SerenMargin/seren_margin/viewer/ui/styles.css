@@ -1,11 +1,6 @@
 :root {
-    --bg: #14141f;
-    --bg-2: #1a1a2e;
-    --panel: #1f2036;
-    --panel-2: #262844;
-    --line: #33365a;
-    --muted: #9aa0c8;
-    --faint: #6c7199;
+    /* the walls (--bg, --bg-2, --panel, --panel-2, --line, --muted, --faint)
+       come from the shell, tinted 5% by this service's accent (24 Oct 2026) */
     /* --accent (#d1cbba, the page colour Starwright uses for the margin) comes from the shell
        (render_from_dir accent=...); the baseplate owns it. */
     --accent-dim: #6f6a5c;
