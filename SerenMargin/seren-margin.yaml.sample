@@ -45,6 +45,13 @@ server:
   #   - from: http://127.0.0.1:7421/mcp-manifest
   #     bearer_token_env: SEREN_MARGIN_TOKEN
 
+  # pages: margin
+  #   Who owns the dedication and the preface. "margin" (default): they are
+  #   written here. "piton": they moved to the carabiner's piton, so
+  #   set_dedication / set_preface stop being offered and a write gets a
+  #   pointer instead; the reads stay up. One Margin serves every box clipped
+  #   to it - flip this after the LAST box that writes here has a piton.
+
   # http_reads: false
   #   Whether the HTTP API serves note CONTENT (GET /notes, /notes/search,
   #   /notes/topics, /notes/{id}, and the note echoed back by amend). Off by

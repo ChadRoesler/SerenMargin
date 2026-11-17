@@ -71,7 +71,8 @@ from typing import Any, Optional
 from mcp.server.fastmcp import FastMCP, Image
 from seren_sinew.blobs import choose_shown, keep_each
 
-from ..bookmark import DEDICATION_MAX_CHARS, PREFACE_MAX_CHARS, build_bookmark, build_preface
+from ..bookmark import (DEDICATION_MAX_CHARS, PAGE_WRITERS, PREFACE_MAX_CHARS, build_bookmark,
+                        build_preface, pages_moved)
 from ..config import MarginConfig
 from ..models import MarginNote
 from ..store import LETTER_KIND, MarginStore
@@ -408,6 +409,8 @@ class MarginToolImpl:
         page it is. What's private stays in your notes and letters. Capped at
         2000 characters, because it rides into every session.
         """
+        if self.config.pages == "piton":
+            return {"ok": False, "error": pages_moved("dedication")}
         text = (text or "").strip()
         if not text:
             return {"ok": False, "error": "an empty page - write something, or keep the current one"}
@@ -457,6 +460,8 @@ class MarginToolImpl:
         new page; a chat already open keeps the prompt it started with.
         Capped at 8000 characters.
         """
+        if self.config.pages == "piton":
+            return {"ok": False, "error": pages_moved("preface")}
         text = (text or "").strip()
         if not text:
             return {"ok": False, "error": "an empty page - write something, or keep the current one"}
@@ -520,9 +525,15 @@ def register_tools(mcp: FastMCP, store: MarginStore,
     mcp.tool()(impl.amend_note)
     mcp.tool()(impl.retract_note)
     mcp.tool()(impl.bookmark)
-    mcp.tool()(impl.set_dedication)
+    # Once the pages live in the piton, the writers are not OFFERED at all -
+    # a Workbench writes through to Margin only while Margin lists them, so
+    # leaving them off the list is what ends the write-through. The refusal
+    # inside each method is the backstop for a direct call.
+    if config.pages != "piton":
+        mcp.tool()(impl.set_dedication)
     mcp.tool()(impl.preface)
-    mcp.tool()(impl.set_preface)
+    if config.pages != "piton":
+        mcp.tool()(impl.set_preface)
     mcp.tool()(impl.write_letter)
     mcp.tool()(impl.read_letters)
     mcp.tool()(impl.keep_with_note)

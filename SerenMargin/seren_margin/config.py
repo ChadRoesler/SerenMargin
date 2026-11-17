@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -152,6 +152,20 @@ class MarginConfig(BaseModel):
     # Turn it on only for the Workbench path, whose manifest proxies the read
     # tools to these routes - and give it a bearer when you do.
     http_reads: bool = False
+
+    # WHO OWNS THE FRONT PAGES. "margin" (default): the dedication and the
+    # preface are written here, as they always were. "piton": they have moved
+    # to the carabiner's piton (SerenCarabiners/PITON.md), written through
+    # `kbh <harness> piton set` or the Workbench's own set_dedication /
+    # set_preface. Then Margin stops OFFERING its two page writers over MCP
+    # (so a Workbench stops writing through to it on its own) and its PUT
+    # routes refuse with a pointer. The reads stay up either way, for older
+    # carabiners and a Symposium still reading the preface here.
+    #
+    # One Margin serves every box clipped to it, so this is per identity, not
+    # per box: flip it after the LAST box that writes here has a piton.
+    pages: Literal["margin", "piton"] = "margin"
+
     updates: UpdatesConfig = Field(default_factory=UpdatesConfig)
     backup: BackupConfig = Field(default_factory=BackupConfig)
     keepsakes: KeepsakesConfig = Field(default_factory=KeepsakesConfig)
@@ -251,7 +265,7 @@ def _apply_server_overrides(cfg: MarginConfig, server: dict[str, Any], *, source
     """
     # Whitelist of known keys to keep YAML from setting arbitrary attributes.
     # (If you add a field to MarginConfig, add it here too.)
-    known = {"db_path", "host", "port", "allow_open_lan", "http_reads",
+    known = {"db_path", "host", "port", "allow_open_lan", "http_reads", "pages",
              "bearer_token", "bearer_token_env", "bearer_token_keyring"}
     for key, raw in server.items():
         if key not in known:
@@ -315,6 +329,7 @@ def load_config(path: Optional[str] = None) -> MarginConfig:
         "SEREN_MARGIN_HOST": "host",
         "SEREN_MARGIN_PORT": "port",
         "SEREN_MARGIN_ALLOW_OPEN_LAN": "allow_open_lan",
+        "SEREN_MARGIN_PAGES": "pages",
         "SEREN_MARGIN_BEARER_TOKEN": "bearer_token",
         "SEREN_MARGIN_BEARER_TOKEN_ENV": "bearer_token_env",
         "SEREN_MARGIN_BEARER_TOKEN_KEYRING": "bearer_token_keyring",

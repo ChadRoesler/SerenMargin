@@ -76,7 +76,8 @@ from importlib.resources import files
 from importlib.metadata import version as pkg_version, PackageNotFoundError
 
 
-from .bookmark import DEDICATION_MAX_CHARS, PREFACE_MAX_CHARS, build_bookmark, build_preface
+from .bookmark import (DEDICATION_MAX_CHARS, PAGE_WRITERS, PREFACE_MAX_CHARS, build_bookmark,
+                       build_preface, pages_moved)
 from .config import MarginConfig, load_config
 from .models import DedicationSet, KeepsakeCreate, LetterCreate, MarginNote, NoteAmend, NoteCreate, NoteStats
 from .store import LETTER_KIND, MarginStore
@@ -248,6 +249,15 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         content = (files("seren_margin") / "mcp-manifest.yaml").read_text(encoding="utf-8")
         content = content.replace("__BASE_URL__", base_url)
         content = content.replace("__VERSION__", version_str)
+
+        if cfg.pages == "piton":
+            # The pages moved to the piton: the writers leave the manifest the
+            # same way they leave /mcp, so nothing advertises a tool that is
+            # certain to refuse.
+            import yaml
+            doc = yaml.safe_load(content)
+            doc["tools"] = [t for t in doc.get("tools", []) if t.get("name") not in PAGE_WRITERS]
+            content = yaml.safe_dump(doc, sort_keys=False, allow_unicode=True)
 
         return Response(content=content, media_type="application/yaml")
 
@@ -443,6 +453,8 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
 
     @app.put("/dedication")
     async def put_dedication(body: DedicationSet = Body(...)):
+        if cfg.pages == "piton":
+            raise HTTPException(409, pages_moved("dedication"))
         text = (body.text or "").strip()
         if not text:
             raise HTTPException(400, "text must not be empty")
@@ -469,6 +481,8 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
 
     @app.put("/preface")
     async def put_preface(body: DedicationSet = Body(...)):
+        if cfg.pages == "piton":
+            raise HTTPException(409, pages_moved("preface"))
         text = (body.text or "").strip()
         if not text:
             raise HTTPException(400, "text must not be empty")

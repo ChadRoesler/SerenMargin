@@ -165,6 +165,21 @@ last N versions (`version`, `text`, `set_at`, `why`), newest first, served
 like the bookmark. Once a box has a piton, its bookmark hook shows the
 piton's pages and only the letter count from here.
 
+**When the move is done: `pages: piton`.** On the `server:` block (or
+`SEREN_MARGIN_PAGES=piton`), it tells Margin the pages live elsewhere now.
+`set_dedication` and `set_preface` stop being offered, over `/mcp` and in
+`/mcp-manifest` alike, which is also what ends a Workbench's write-through,
+since the Workbench only forwards to Margin while Margin lists them. A direct
+call or a `PUT` still gets a refusal (409 over HTTP) that says where the page
+went. The reads stay up (`/bookmark`, `/dedication`, `/preface`, their
+`?history`) for older carabiners and a Symposium still reading the preface
+here. The default is `margin`, which changes nothing.
+
+One Margin serves every box clipped to it, so this switch is per identity,
+not per box. **Flip it after the last box that writes here has a piton.**
+Flip it early and an unmigrated box doesn't break, it just goes stale: its
+bookmark keeps showing the last page Margin had.
+
 None of this is opt-in. Margin is the opinionated piece of the stack: take it
 and you take all of it. Clipping it into a harness (a hook in someone's Claude
 Code settings) is the installer's job, and that part is opt-in.
@@ -273,6 +288,7 @@ has its own reader. See
 | `SEREN_MARGIN_PORT`     | `7421`                     | Listen port                        |
 | `SEREN_MARGIN_BEARER_TOKEN` / `_BEARER_TOKEN_ENV` / `_BEARER_TOKEN_KEYRING` | unset | Optional bearer; see below |
 | `SEREN_MARGIN_ALLOW_OPEN_LAN` | unset                | Run open beyond loopback, on purpose, with a banner |
+| `SEREN_MARGIN_PAGES`    | `margin`                   | `piton` once the pages have moved; see "The bookmark, the dedication, and letters" |
 
 MCP-only knobs: `SEREN_MARGIN_MCP_MOUNT` (default `/mcp`),
 `SEREN_MARGIN_MCP_ALLOWED_HOSTS` / `_ALLOWED_ORIGINS` (DNS-rebinding allowlist,

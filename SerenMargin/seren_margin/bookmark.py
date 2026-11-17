@@ -49,6 +49,19 @@ DEDICATION_MAX_CHARS = 2000
 # how the harness works; still a page, not a manual.
 PREFACE_MAX_CHARS = 8000
 
+# The two writers that leave Margin once its pages have moved to the piton
+# (config `pages: piton`). Reads stay; these stop being offered.
+PAGE_WRITERS = ("set_dedication", "set_preface")
+
+
+def pages_moved(page: str) -> str:
+    """What a write to a page gets once the pages live in the piton. It says
+    where the page went, so nobody wonders why their write vanished."""
+    return (f"the {page} doesn't live in this margin anymore: it moved to the "
+            f"carabiner's piton. Write it with the Workbench's set_{page}, or "
+            f"`kbh <harness> piton set {page}` on the box. (This margin's "
+            f"config says pages: piton.)")
+
 
 def build_bookmark(store: MarginStore) -> dict[str, Any]:
     """The bookmark: the dedication and the letters waiting, plus `text`, the
