@@ -157,6 +157,14 @@ a choice. Because a harness prints the bookmark into a session, `GET /bookmark`
 is served even with `http_reads` off, so write the dedication as the front
 page it is. Letter contents stay behind `http_reads`, like notes.
 
+**The pages are moving to the carabiner's piton** (SerenCarabiners `PITON.md`,
+16 Nov 2026): one folder per box, beside the carabiners, so a box without
+Margin keeps its dedication and preface. To take them over with every
+version, `GET /dedication?history=N` and `GET /preface?history=N` return the
+last N versions (`version`, `text`, `set_at`, `why`), newest first, served
+like the bookmark. Once a box has a piton, its bookmark hook shows the
+piton's pages and only the letter count from here.
+
 None of this is opt-in. Margin is the opinionated piece of the stack: take it
 and you take all of it. Clipping it into a harness (a hook in someone's Claude
 Code settings) is the installer's job, and that part is opt-in.

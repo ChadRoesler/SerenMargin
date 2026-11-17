@@ -13,8 +13,9 @@ Endpoints:
     POST   /notes/{id}/amend  - append to a note (never replaces)
     DELETE /notes/{id}        - retract (hard delete)
     GET    /bookmark          - the dedication + a COUNT of unread letters (never text)
+    GET    /dedication        - the dedication; ?history=N its versions (for the carabiner's piton)
     PUT    /dedication        - a new version of the dedication (never overwrites)
-    GET    /preface           - the page a harness reads to the model as its system prompt
+    GET    /preface           - the page a harness reads to the model as its system prompt; ?history=N
     PUT    /preface           - a new version of the preface (never overwrites)
     POST   /letters           - a letter to the next session
     POST   /letters/read      - open unread letters, oldest first; marks them read *
@@ -424,6 +425,22 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
             return Response(content=bm["text"] + "\n", media_type="text/plain; charset=utf-8")
         return bm
 
+    # How far back a history read goes: every version a page has had, for the
+    # carabiner's piton to take the pages over (SerenCarabiners/PITON.md).
+    HISTORY_MAX = 1000
+
+    @app.get("/dedication")
+    async def get_dedication(history: int = 0):
+        """The dedication as it is now and, with ?history=N, its last N
+        versions newest first ({version, text, set_at, why}). Served whatever
+        http_reads says, like the bookmark that already carries it: it is the
+        page written to be read at the door. Added 16 Nov 2026 so the
+        carabiner's piton can take the dedication over with every version."""
+        out: dict = {"dedication": store.dedication()}
+        if history > 0:
+            out["history"] = store.dedication_history(limit=min(history, HISTORY_MAX))
+        return out
+
     @app.put("/dedication")
     async def put_dedication(body: DedicationSet = Body(...)):
         text = (body.text or "").strip()
@@ -435,15 +452,19 @@ def create_app(config: Optional[MarginConfig] = None) -> FastAPI:
         return {"ok": True, "version": entry["version"], "changed": changed}
 
     @app.get("/preface")
-    async def get_preface(format: Optional[str] = None):
+    async def get_preface(format: Optional[str] = None, history: int = 0):
         """The preface: the page a harness reads to the model as its system
         prompt (seren_margin.bookmark). Served whatever http_reads says, like
         the bookmark: it is written to be read at the door, by the room.
-        ?format=text gives the page alone, empty when none is written."""
+        ?format=text gives the page alone, empty when none is written.
+        ?history=N adds its last N versions, newest first (16 Nov 2026, for
+        the carabiner's piton)."""
         pf = build_preface(store)
         if format == "text":
             return Response(content=pf["text"] + ("\n" if pf["text"] else ""),
                             media_type="text/plain; charset=utf-8")
+        if history > 0:
+            pf = {**pf, "history": store.preface_history(limit=min(history, HISTORY_MAX))}
         return pf
 
     @app.put("/preface")

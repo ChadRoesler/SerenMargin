@@ -156,6 +156,30 @@ def test_http_preface_is_served_with_reads_off(tmp_path):
         assert ROOM not in str(c.get("/bookmark").json())
 
 
+def test_http_page_history_is_served_with_reads_off(tmp_path):
+    """The carabiner's piton takes both pages over with every version
+    (16 Nov 2026): GET /dedication?history=N and GET /preface?history=N, with
+    http_reads off like the bookmark, newest first, set_at and why kept.
+    Letters and notes are still not in it."""
+    with _client(tmp_path) as c:
+        assert c.get("/dedication").json() == {"dedication": None}
+        assert c.get("/dedication?history=10").json() == {"dedication": None, "history": []}
+        c.put("/dedication", json={"text": PAGE, "why": "first page"})
+        c.put("/dedication", json={"text": PAGE + " Ask the clock.", "why": "the clock got built"})
+        c.post("/letters", json={"content": SECRET})
+        got = c.get("/dedication?history=10").json()
+        assert got["dedication"]["version"] == 2
+        assert [v["version"] for v in got["history"]] == [2, 1]
+        assert got["history"][1]["why"] == "first page" and got["history"][1]["set_at"] > 0
+        assert "history" not in c.get("/dedication").json()
+        assert SECRET not in str(got)
+        c.put("/preface", json={"text": ROOM, "why": "first room"})
+        pf = c.get("/preface?history=10").json()
+        assert pf["version"] == 1 and pf["history"][0]["text"] == ROOM
+        assert "history" not in c.get("/preface").json()
+        assert c.get("/preface?format=text&history=10").text == ROOM + "\n"
+
+
 def test_an_old_database_gains_read_at_and_keeps_its_notes(tmp_path):
     db = tmp_path / "notes.db"
     with sqlite3.connect(db) as conn:
